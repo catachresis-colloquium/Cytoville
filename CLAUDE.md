@@ -160,7 +160,7 @@ Read it there; `verification/proofs/README.adoc` maps it onto this repo.
 
 | Code or obligation | Verifier |
 |---|---|
-| Rust code | **Creusot** with **Pearlite** contracts, and **Verus**, with distinct implementation-linked scopes; record pending or unsupported scopes explicitly. Kani for `unsafe`/FFI seams and Aeneas for Rust that implements an Agda theorem run alongside. |
+| Rust code | **Creusot** with **Pearlite** contracts, and **Verus**, with distinct implementation-linked scopes; record pending or unsupported scopes explicitly. Kani for `unsafe`/FFI seams and Aeneas for Rust that implements an Agda theorem run alongside, never instead. |
 | Ada code | **SPARK** |
 | APIs, ABIs, engineering properties | **Idris2** |
 | Theory | **Agda**, rechecked in **Rocq** and **Lean** (no Mathlib) |

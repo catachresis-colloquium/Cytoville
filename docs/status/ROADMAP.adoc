@@ -94,5 +94,22 @@ combat, coprocessor, GSA or whole-game latency programme. Hosting remains local.
 
 The proof ledger now explicitly allocates Creusot/Pearlite and Verus scopes
 under policy §1.2. Worker-boundary proofs and the new Verus targets remain OPEN;
-bounded tests are not promoted to proof receipts. Next: graphical/local-TLS
-acceptance and CI for this change, then the district/encounter milestone.
+bounded tests are not promoted to proof receipts. The final Linux regression
+suite and Clippy pass. The complete isolated X11 graphical/local-TLS journey
+also passes, including offline save/reload, settings and native rival resume.
+This is functional acceptance, not target-desktop latency certification.
+
+Draft PR #17 carries this change. CI follow-up corrects the current draft
+canon 2.1.5 declaration, native DEED syntax and capability inventory. The
+Idris2 package now builds from root `abi.ipkg`; generated ABI bytes remain
+unchanged. The existing Linux workload is factored into reusable `e2e.yml`;
+the established Rust check still requires both Windows and Linux acceptance.
+The current standards profile checker passes against standards commit
+`305743d271bac04cf271a792b703a6379e29588b`. This is profile conformance, not a
+claim that every normative criterion or formal obligation is complete.
+
+The shared proof repository rename needs a new exact organisation allowlist
+entry; the minimal compatibility backport is
+`hyperpolymath/proven-cicd-and-workflows#137`. Required CI and the new proof run
+must pass before this draft is ready. Next: the district/encounter milestone,
+then measured accelerator consumers and studio-service integration.

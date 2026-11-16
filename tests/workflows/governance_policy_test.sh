@@ -4,10 +4,8 @@
 # PR #244 configuration regressions: the retired runtime policy must not ship,
 # and governance must run for pull requests targeting any branch with a locked
 # checkout of metadatastician/standards at a full 40-hex SHA.
-# PR #257 adds the proof-policy mapping and adopts canon 2.1.3, and canon 2.1.4 (an editorial PATCH:
-# the criteria and gates hashes are unchanged) is adopted here. Since that
-# change is documentation and configuration only, check its published contract
-# here without invoking any proof compiler or making network requests.
+# Includes the proof-policy mapping and the current draft canon 2.1.5 identity.
+# These are configuration checks, not proof compiler runs or release evidence.
 # Usage: bash tests/workflows/governance_policy_test.sh
 # Requires Bun; reads local policy documents, YAML and deed fields only.
 
@@ -18,7 +16,7 @@ command -v bun >/dev/null 2>&1 || { echo 'FAIL: Bun is required' >&2; exit 1; }
 
 bun run - "$REPO_DIR" <<'JS'
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -128,6 +126,10 @@ for (const [label, arrivalLabel, verifier] of [
     assert.equal(matches.length, 1, `${name} must map ${key} exactly once`);
     assert.match(matches[0][1], new RegExp(`^${verifier}\\b`),
       `${name} must assign ${key} to ${verifier}`);
+    if (key === "Rust code") {
+      assert.match(matches[0][1], /\bPearlite\b/, `${name} must name Creusot's contract language`);
+      assert.match(matches[0][1], /\bVerus\b/, `${name} must retain the complementary Rust verifier`);
+    }
     if (key === "Theory") {
       assert.match(matches[0][1], /Agda, rechecked in Rocq and Lean/);
     }
@@ -146,7 +148,7 @@ console.log("PASS: proof locations preserve mandatory ABI proofs and both theory
 const obligations = prose(mapping);
 assert.match(obligations, /types, functions or wire formats are engineering \(Idris2\)/);
 assert.match(obligations, /any implementation are theory \(Agda\)/);
-assert.match(obligations, /first-party Rust or Ada code.*Creusot or SPARK on that code, not restated in Idris2/);
+assert.match(obligations, /first-party Rust or Ada code.*Creusot\/Pearlite and Verus, or SPARK for Ada, on that code, not restated in Idris2/);
 assert.match(obligations, /recorded beside the artefact and in docs\/status\/PROOF-STATUS\.adoc/);
 assert.match(obligations, /tlaplus\/.*finite model check is reported as TESTED, with its bounds/);
 assert.match(obligations, /Kani \(unsafe and FFI seams, reported TESTED with bounds\)/);
@@ -186,15 +188,51 @@ for (const path of ["docs/status/PROOF-NEEDS.adoc", "docs/status/PROOF-STATUS.ad
 }
 console.log("PASS: new proof instructions require needs, verification, rechecks and assumptions");
 
-// Keep the independently specified release tuple together: a version-only
+// Keep the independently specified canon tuple together: a version-only
 // bump or retaining the previous gates hash would misidentify the canon.
-// Update this expectation deliberately when adopting the next canon release.
+// The current upstream identity is draft; this is not a publication claim.
 const field = (key) => execFileSync("bash", [resolve(root, "scripts/deed-field.sh"),
   resolve(root, "cytoville_chora.deed"), "canon", key], { encoding: "utf8" }).trim();
 assert.deepEqual([field("version"), field("criteria-sha256"), field("gates-sha256")], [
-  "2.1.4",
+  "2.1.5",
   "6a5aa8857bd0d0d58ef48827938ca17c251b6b854dacf59d306388d61694d82a",
-  "2f31f46d4753432e0aa8c9c28f339e18e062c98dc6e6ef4ecbb76993cf37638b",
-], "canon 2.1.4 keeps the criteria and gates identities of 2.1.3 (an editorial PATCH)");
-console.log("PASS: the deed adopts the complete canon 2.1.4 identity");
+  "5c510bba025be718deebb12d0333bfe7db2da43c66578b728b1a334df65290b1",
+], "canon 2.1.5 retains the criteria and adopts corrected gate-table identity");
+assert.equal(execFileSync("bash", [resolve(root, "scripts/deed-field.sh"),
+  resolve(root, "cytoville_chora.deed"), "provenance", "canon-version"],
+  { encoding: "utf8" }).trim(), "2.1.4", "mint provenance must not follow adoption");
+console.log("PASS: current draft canon identity and original mint provenance are distinct");
+
+// A skipped or failed reusable acceptance job must never turn the established
+// required Rust check green. Exercise its actual shell verdict for every result.
+const rust = readYaml("rust-ci.yml");
+const e2e = readYaml("e2e.yml");
+assert.equal(rust.jobs.acceptance.uses, "./.github/workflows/e2e.yml");
+assert.equal(rust.jobs.acceptance.needs, "windows-native");
+const gate = rust.jobs["rust-ci"];
+assert.deepEqual(gate.needs, ["windows-native", "acceptance"]);
+assert.equal(gate.if, "${{ always() }}");
+assert.equal(gate.steps.length, 1);
+assert.deepEqual(gate.steps[0].env, {
+  WINDOWS_RESULT: "${{ needs.windows-native.result }}",
+  ACCEPTANCE_RESULT: "${{ needs.acceptance.result }}",
+});
+for (const windows of ["success", "failure", "cancelled", "skipped"]) {
+  for (const acceptance of ["success", "failure", "cancelled", "skipped"]) {
+    const result = spawnSync("bash", ["-c", gate.steps[0].run], {
+      env: { ...process.env, WINDOWS_RESULT: windows, ACCEPTANCE_RESULT: acceptance },
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status === 0, windows === "success" && acceptance === "success");
+  }
+}
+assert.ok(Object.hasOwn(e2e.on, "workflow_call"));
+const acceptanceSteps = e2e.jobs.acceptance.steps;
+for (const script of ["scripts/cytoville-check.sh", "scripts/cytoville-graphical-acceptance.sh"]) {
+  const step = acceptanceSteps.find((s) => (s.run ?? "").includes(script));
+  assert.ok(step, `${script} must execute in the reusable acceptance job`);
+  assert.equal(step["continue-on-error"], undefined);
+}
+assert.equal(e2e.jobs.acceptance["continue-on-error"], undefined);
+console.log("PASS: both native platforms and complete acceptance are required; skipped work refuses green");
 JS

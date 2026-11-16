@@ -6,7 +6,7 @@
 |Scope |State |Evidence and boundary
 |Idris ABI size arithmetic, seat involution, phase constructors
 |proven
-|`idris2 --build src/interface/abi.ipkg`; total definitions, no postulates or escape hatches. Trust Idris2 and its compiler. This is a contract-level claim.
+|`idris2 --build abi.ipkg`; total definitions, no postulates or escape hatches. Trust Idris2 and its compiler. This is a contract-level claim.
 |Rust/Zig concrete layout agreement and native kernel calls
 |tested-only
 |Compile-time size/offset assertions, Zig boundary tests and a linked C caller; native x86-64 Linux. C ABI compiler/target layout remains trusted.
@@ -68,10 +68,26 @@ The game-specific reproducible proof container remains to be completed.
 The proposed correction is backported as signed commit
 `1084f47cc64090a7acc5f719a65fec48c1705e06` in cicd-suite. Compared with the
 previous Cytoville pin, only the parser and its regression tests change; the
-workflow and toolchain action pins are identical. The caller and lockfile now
-select that backport. The owner admitted the exact reusable-workflow reference
+workflow and toolchain action pins are identical. The caller and lockfile then
+selected that backport. The owner admitted the exact reusable-workflow reference
 on 2026-11-07. Hosted run 42365155854 validated the corrected singleton parser
 with a real successful control, rejected the deliberately false control, and
 completed the caller proof. The canonical upstream proposal remains
 `hyperpolymath/cicd-suite#92`; this receipt does not claim upstream merge or
 validation against a second repository.
+
+== Repository rename compatibility, 2026-11-16
+
+PR #17's initial proof run 43831042849 could not resolve the old reusable
+workflow address after `cicd-suite` became `proven-cicd-and-workflows`. The
+caller and lockfile now pin the minimal compatibility backport
+`d415d8b92d7a2edeab64f0d816ff9ad12cad4392` in the canonical repository (PR #137,
+targeting the existing compatibility branch). Only repository names in three
+resolvers and four checkout steps change from the previously successful pin;
+the proof scripts and toolchain pins are unchanged. Each actual resolver
+accepted a full-SHA canonical caller and refused floating and ambiguous pins.
+
+This requires the exact new workflow address in the organisation allowlist.
+Resolver tests do not establish a new production proof receipt. Hosted proof
+acceptance at the new pin is pending; the previous successful receipt above
+remains historical evidence only.

@@ -14,7 +14,7 @@ this page only maps it onto this directory.
 
 |Rust code
 |*Creusot* with *Pearlite* contracts, and *Verus*
-|Implementation-linked scopes under policy §1.2. Pearlite specifies Creusot contracts; Verus has its own specification/proof language. Record pending scopes in the proof ledger.
+|On the Rust code itself, with implementation-linked scopes under policy §1.2. Pearlite specifies Creusot contracts; Verus has its own specification/proof language. Record pending scopes in the proof ledger.
 
 |Ada code
 |*SPARK*
