@@ -4,7 +4,8 @@ use super::performance;
 use cytoville_core::Command;
 use cytoville_runtime::Runtime;
 use std::{
-    path::PathBuf,
+    io::Write,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread::JoinHandle,
     time::Instant,
@@ -83,7 +84,13 @@ impl Job {
         path: PathBuf,
         command: Option<Command>,
     ) -> Result<Self, String> {
-        if path.with_extension("tmp") == path {
+        // Windows paths normally ignore ASCII case: save.TMP aliases the
+        // temporary save.tmp file. Reserve every spelling on all platforms.
+        if path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("tmp"))
+        {
             return Err(
                 "Choose a save filename ending in .json; .tmp is reserved for pending saves."
                     .into(),
@@ -101,14 +108,14 @@ impl Job {
                 let _timing = performance::Span::new("save_serialize_ms");
                 serde_json::to_vec(&runtime).map_err(|e| e.to_string())?
             };
-            let temp = path.with_extension("tmp");
-            {
+            let staged = {
                 let _timing = performance::Span::new("save_write_ms");
-                std::fs::write(&temp, bytes).map_err(|e| format!("Progress was not saved: {e}"))?;
-            }
+                stage_checkpoint(&path, &bytes)
+                    .map_err(|e| format!("Progress was not saved: {e}"))?
+            };
             {
                 let _timing = performance::Span::new("save_replace_ms");
-                std::fs::rename(&temp, &path)
+                commit_checkpoint(staged, &path)
                     .map_err(|e| format!("Progress was not saved: {e}"))?;
             }
             Ok(Completed {
@@ -147,6 +154,28 @@ impl Job {
         );
         result
     }
+}
+
+// Keep checkpoint staging independent of settings' same-stem .tmp path. The
+// uniquely created file lives beside the destination, so persist stays on the
+// same filesystem. Drop cleans up an abandoned or failed staging operation.
+fn stage_checkpoint(path: &Path, bytes: &[u8]) -> std::io::Result<tempfile::NamedTempFile> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut staged = tempfile::Builder::new()
+        .prefix(".cytoville-checkpoint-")
+        .tempfile_in(parent)?;
+    staged.write_all(bytes)?;
+    Ok(staged)
+}
+
+fn commit_checkpoint(staged: tempfile::NamedTempFile, path: &Path) -> std::io::Result<()> {
+    staged
+        .persist(path)
+        .map(|_| ())
+        .map_err(|error| error.error)
 }
 
 #[cfg(test)]
@@ -203,7 +232,18 @@ mod tests {
             .open(&root)
             .unwrap();
         drop(file);
-        assert!(Job::start(runtime.clone(), root.clone(), Some(Command::EndTurn)).is_err());
+        for extension in ["tmp", "TMP", "TmP"] {
+            let result = Job::start(
+                runtime.clone(),
+                root.with_extension(extension),
+                Some(Command::EndTurn),
+            )
+            .map(Job::finish);
+            assert!(
+                result.is_err(),
+                "temporary extension {extension} was admitted"
+            );
+        }
         assert!(
             std::fs::read(&root).unwrap().is_empty(),
             "reserved temporary path was overwritten"
@@ -252,5 +292,32 @@ mod tests {
         release.send(()).unwrap();
         assert!(queue.finish().unwrap().is_some());
         assert!(!queue.is_some());
+    }
+
+    #[test]
+    fn settings_write_between_checkpoint_stage_and_commit_cannot_replace_game_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let checkpoint = root.path().join("profile.json");
+        let preferences = root.path().join("profile.prefs");
+        std::fs::write(&checkpoint, b"previous checkpoint").unwrap();
+        let staged = stage_checkpoint(&checkpoint, b"next checkpoint").unwrap();
+        let staged_path = staged.path().to_path_buf();
+        let mut settings = crate::settings::Settings::load(preferences.clone());
+        settings.change(crate::settings::Preference::Music);
+        assert!(settings.notice.is_empty());
+        assert_eq!(std::fs::read(&checkpoint).unwrap(), b"previous checkpoint");
+        commit_checkpoint(staged, &checkpoint).unwrap();
+        assert_eq!(std::fs::read(&checkpoint).unwrap(), b"next checkpoint");
+        let prefs: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(preferences).unwrap()).unwrap();
+        assert_eq!(prefs["music"], false);
+        assert!(!staged_path.exists());
+
+        // A replacement failure drops only this operation's temporary file.
+        let failed = stage_checkpoint(&checkpoint, b"uncommitted").unwrap();
+        let failed_path = failed.path().to_path_buf();
+        assert!(commit_checkpoint(failed, root.path()).is_err());
+        assert!(!failed_path.exists());
+        assert_eq!(std::fs::read(checkpoint).unwrap(), b"next checkpoint");
     }
 }

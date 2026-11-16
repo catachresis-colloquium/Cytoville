@@ -108,8 +108,13 @@ The current standards profile checker passes against standards commit
 `305743d271bac04cf271a792b703a6379e29588b`. This is profile conformance, not a
 claim that every normative criterion or formal obligation is complete.
 
-The shared proof repository rename needs a new exact organisation allowlist
-entry; the minimal compatibility backport is
-`hyperpolymath/proven-cicd-and-workflows#137`. Required CI and the new proof run
-must pass before this draft is ready. Next: the district/encounter milestone,
+The shared proof repository rename is unblocked: the exact new organisation
+allowlist entry is visible and the minimal compatibility backport is
+`hyperpolymath/proven-cicd-and-workflows#137`. All checks, including production
+proofs and hosted graphical/TLS acceptance, passed at `598a981`. Review then
+identified a same-stem settings/checkpoint staging collision and Windows suffix
+aliases. Unique checkpoint stages and case-insensitive suffix refusal now pass
+16 native Windows tests. The owner approved the exact DEP5 filename correction
+preserving the moved ABI package's existing licence. Required CI must rerun on
+this follow-up before the draft is ready. Next: the district/encounter milestone,
 then measured accelerator consumers and studio-service integration.

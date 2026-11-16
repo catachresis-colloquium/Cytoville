@@ -149,10 +149,14 @@ the last acknowledged runtime. This deliberately prevents playing forward on
 an unsaved state. Normal shutdown drains the one pending request before exit;
 a shutdown failure is reported on stderr with failure exit status.
 
-The checkpoint format and write/rename sequence are unchanged. There is no
-fsync/power-loss claim, no guarantee on forced process termination, and no
-cross-process save lock. Reserved `.tmp` save names are refused before writing
-so a temporary file cannot alias the destination. A cold/large snapshot clone,
+The checkpoint format is unchanged. The worker writes a uniquely created,
+private staging file beside the destination, then replaces the checkpoint via
+`tempfile` 3.27.0. Settings and game saves with the same filename stem no longer
+share a staging path; a regression interleaves the real settings writer between
+checkpoint staging and replacement. Failed/abandoned stages are cleaned up.
+There is no fsync/power-loss claim, no guarantee on forced process termination,
+and no cross-process save lock. Reserved `.tmp` save names are refused without
+regard to ASCII case, including Windows aliases. A cold/large snapshot clone,
 UI rebuild, startup and presentation queues remain separate possible stalls.
 The stalled-worker regression exercises continued animation and state isolation;
 it does not establish improved click-to-photon latency on the user's desktop.

@@ -70,3 +70,9 @@ Linux validation passed 15 Bevy binary tests, one library test and Clippy for
 the Bevy/runtime targets. The worker's stalled-job regression checks continued
 animation and refusal of overlapping state changes. This is not a new native
 Windows live-window or input-to-display performance receipt.
+
+The review follow-up passed all 16 native Windows release binary tests,
+including `.tmp`/`.TMP`/`.TmP` refusal and an actual settings write interleaved
+between checkpoint staging and replacement. Checkpoint stages now use uniquely
+created same-directory files; failed replacement cleans up the private stage.
+Hosted graphical acceptance must run again on this follow-up commit.

@@ -51,7 +51,7 @@ does not migrate the reusable workflow or claim a new proof execution.
 |`local::Queue::{submit,poll,finish}` and `local::Job::start`: one in-flight transaction, saved-before-published state, shutdown draining
 |Creusot / Pearlite; Verus / ownership and transition specifications
 |open
-|New thread/file boundary has regression tests, not proofs. Specify the actual queue transitions for both verifier scopes; Rust thread/mutex semantics, serde and OS file replacement remain external assumptions. Neither verifier has checked this boundary.
+|New thread/file boundary has regression tests, not proofs. Specify the actual queue transitions for both verifier scopes; Rust thread/mutex semantics, serde, tempfile 3.27.0 and OS file replacement remain external assumptions. Neither verifier has checked this boundary.
 |===
 
 Normal process exit drains the pending worker. File write/rename is not fsync
@@ -87,7 +87,10 @@ resolvers and four checkout steps change from the previously successful pin;
 the proof scripts and toolchain pins are unchanged. Each actual resolver
 accepted a full-SHA canonical caller and refused floating and ambiguous pins.
 
-This requires the exact new workflow address in the organisation allowlist.
-Resolver tests do not establish a new production proof receipt. Hosted proof
-acceptance at the new pin is pending; the previous successful receipt above
-remains historical evidence only.
+The exact new workflow address is now visible in the organisation allowlist.
+Hosted run 43837369943 at Cytoville commit
+`598a981af075e4b4c78a39cc709c9aea7f2d34bb` passed on 2026-11-16: Creusot 0.14.0
+proved three production verification files, rejected the deliberately false
+postcondition and proved the true control. The shared verdict and caller
+acceptance both passed. This receipt covers the recorded resource implementation,
+not the offline worker or all Rust code; subsequent commits require their own CI.
