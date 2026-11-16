@@ -206,6 +206,55 @@ console.log("PASS: current draft canon identity and original mint provenance are
 // A skipped or failed reusable acceptance job must never turn the established
 // required Rust check green. Exercise its actual shell verdict for every result.
 const rust = readYaml("rust-ci.yml");
+// CI/gate must run on PRs and synthetic merge-queue commits, with producers
+// that cannot disappear behind path filters. Advisory reporters stay advisory.
+const required = read("ci/required-workflows.txt").split(/\r?\n/)
+  .filter((line) => line && !line.startsWith("#"));
+assert.equal(new Set(required).size, required.length);
+const validateProducer = (doc, jobName) => {
+  assert.ok(Object.hasOwn(doc.on, "pull_request"));
+  const pr = doc.on.pull_request ?? {};
+  for (const filter of ["paths", "paths-ignore", "branches-ignore", "types"]) {
+    assert.equal(pr[filter], undefined, `required producer cannot use ${filter}`);
+  }
+  if (pr.branches) {
+    assert.ok(pr.branches.includes("main") || pr.branches.includes("**"));
+    assert.ok(pr.branches.every((branch) => !branch.startsWith("!")));
+  }
+  assert.deepEqual(doc.on.merge_group, { types: ["checks_requested"] });
+  if (jobName) {
+    const jobs = Object.values(doc.jobs).filter((job) => job.name === jobName);
+    assert.equal(jobs.length, 1, `missing or ambiguous required job: ${jobName}`);
+    assert.equal(jobs[0].if, undefined, "required conformance job cannot be skipped");
+    assert.equal(jobs[0].strategy, undefined, "job selector must identify one concrete job");
+  }
+};
+for (const entry of required) {
+  const [path, name] = entry.split("|");
+  validateProducer(Bun.YAML.parse(read(path)), name);
+}
+const aggregate = readYaml("ci.yml");
+validateProducer(aggregate);
+assert.equal(aggregate.jobs.gate.name, "CI/gate");
+assert.deepEqual(aggregate.permissions, { contents: "read", actions: "read" });
+assert.ok(aggregate.jobs.gate.steps.some((s) => s.run === "bash tests/workflows/ci_gate_test.sh"));
+const collect = aggregate.jobs.gate.steps.find((s) => s.run === "bash scripts/check-ci-gate.sh");
+assert.ok(collect);
+assert.equal(collect.env.TARGET_SHA, "${{ github.event.pull_request.head.sha || github.sha }}");
+assert.equal(collect.env.RUN_EVENT, "${{ github.event_name }}");
+for (const mutate of [
+  (d) => { delete d.on.merge_group; },
+  (d) => { d.on.pull_request.paths = ["src/**"]; },
+  (d) => { d.on.merge_group.types = ["destroyed"]; },
+]) {
+  const broken = structuredClone(aggregate);
+  mutate(broken);
+  assert.throws(() => validateProducer(broken));
+}
+const fork = readYaml("fork-governance.yml");
+assert.equal(fork.jobs.deed.steps.find((s) => s.env?.BASE_REF).env.BASE_REF,
+  "${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha || github.base_ref }}");
+console.log("PASS: required producers and CI/gate run for PR and merge queue; missing and filtered wiring refused");
 const e2e = readYaml("e2e.yml");
 assert.equal(rust.jobs.acceptance.uses, "./.github/workflows/e2e.yml");
 assert.equal(rust.jobs.acceptance.needs, "windows-native");

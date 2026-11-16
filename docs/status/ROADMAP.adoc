@@ -99,7 +99,7 @@ suite and Clippy pass. The complete isolated X11 graphical/local-TLS journey
 also passes, including offline save/reload, settings and native rival resume.
 This is functional acceptance, not target-desktop latency certification.
 
-Draft PR #17 carries this change. CI follow-up corrects the current draft
+PR #17 carries this change. CI follow-up corrects the current draft
 canon 2.1.5 declaration, native DEED syntax and capability inventory. The
 Idris2 package now builds from root `abi.ipkg`; generated ABI bytes remain
 unchanged. The existing Linux workload is factored into reusable `e2e.yml`;
@@ -115,6 +115,15 @@ proofs and hosted graphical/TLS acceptance, passed at `598a981`. Review then
 identified a same-stem settings/checkpoint staging collision and Windows suffix
 aliases. Unique checkpoint stages and case-insensitive suffix refusal now pass
 16 native Windows tests. The owner approved the exact DEP5 filename correction
-preserving the moved ABI package's existing licence. Required CI must rerun on
-this follow-up before the draft is ready. Next: the district/encounter milestone,
-then measured accelerator consumers and studio-service integration.
+preserving the moved ABI package's existing licence. All functional CI passed
+at `0a3bee7`, including the true/false proof controls and three production
+resource proof files, Windows tests and the Linux graphical/local-TLS journey.
+The final CodeRabbit review was rate-limited; that is not a completed review.
+
+The repository's Branch-Floor rule also requires `CI/gate`, which had no
+producer. The new aggregate collects current-commit/current-event successes
+and preserves advisory reporting boundaries. Its producers now accept
+merge-queue events. No organisation policy or branch protection is weakened.
+This follow-up still requires its own hosted run and merge-queue acceptance.
+Next: the district/encounter milestone, then measured accelerator consumers
+and studio-service integration. Native desktop latency acceptance remains open.
