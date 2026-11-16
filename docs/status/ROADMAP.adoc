@@ -79,3 +79,20 @@ locally after the owner authorised a Debian restart. The executable acceptance
 script is wired into Rust CI with screenshot retention. Its CI run must pass
 independently; local success is not a substitute. See GRAPHICAL-ACCEPTANCE.adoc
 under docs/verification for scope and remaining coverage.
+
+== Responsiveness continuation, 2026-11-16
+
+PR #14 merged with the production proof and required Rust checks passing.
+A native release command/save profile reproduced delays up to 61.895 ms and
+identified substantial write/rename time. The next change isolates offline
+dispatch and saving from the UI thread, limits work to one pending transaction,
+publishes state only after a successful checkpoint and drains on normal exit.
+The regression suite covers a stalled worker, continued animation, refusal of
+overlapping mutations, save failure and equivalence with synchronous dispatch.
+This is a targeted responsiveness change, not completion of the district,
+combat, coprocessor, GSA or whole-game latency programme. Hosting remains local.
+
+The proof ledger now explicitly allocates Creusot/Pearlite and Verus scopes
+under policy §1.2. Worker-boundary proofs and the new Verus targets remain OPEN;
+bounded tests are not promoted to proof receipts. Next: graphical/local-TLS
+acceptance and CI for this change, then the district/encounter milestone.

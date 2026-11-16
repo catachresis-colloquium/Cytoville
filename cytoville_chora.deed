@@ -619,7 +619,8 @@
       (session :date "2026-11-07" :scope "Bevy presentation and resource-proof CI" :evidence "Hosted 0.14 proof run 42365155854; local graphical TLS journey; portrait cache regression; bounded CPU timing samples")
       (session :date "2026-11-07" :scope "Future computing catalogue and responsiveness diagnostics" :evidence "Native settings rendering; modal-input regression; architecture/FUTURE-COMPUTING.adoc; verification/PERFORMANCE.adoc. No specialist hardware implementation claimed.")
       (session :date "2026-11-07" :scope "Tabbed Settings, configured rival and bounded adiabatic reference harness" :evidence "Settings graphical journey and persistence; runtime configuration/save tests; QUBO candidate/budget/cancellation tests and reversible truth table/inverse checks. Hardware acceleration, energy recovery and whole-game proof are not claimed.")
-      (session :date "2026-11-07" :scope "Integration order and command stall diagnosis" :evidence "Inspected Elixir/native paths, SNIF scope and unified adapter implementation. Removed production harness unwrap/expect findings; native runtime tests pass. Added dispatch/serialisation/write/replace profile spans. No new hardware or transport support claimed."))
+      (session :date "2026-11-07" :scope "Integration order and command stall diagnosis" :evidence "Inspected Elixir/native paths, SNIF scope and unified adapter implementation. Removed production harness unwrap/expect findings; native runtime tests pass. Added dispatch/serialisation/write/replace profile spans. No new hardware or transport support claimed.")
+      (session :date "2026-11-16" :scope "Offline responsiveness and Rust proof allocation" :evidence "Native release command/save sample reproduced file-operation stalls. One pending worker isolates dispatch and checkpoint writes from UI updates; regression checks cover delayed work, failures, equivalence and shutdown. Creusot/Pearlite and Verus scopes recorded explicitly; worker proofs remain open. See PERFORMANCE and ROADMAP for limits."))
     ; debt — Meander debt list
     ; Things found but not fixed. Carried between sessions.
     ; Becomes the next session's Phase 0 input.
@@ -631,7 +632,8 @@
         :last-updated "2026-11-07")
       (entry :date "2026-11-07" :scope "Presentation and governance" :remaining "Hardware release/input latency certification, wider art/accessibility acceptance, repeated external removal of required-check ruleset; see ROADMAP and PERFORMANCE")
       (entry :date "2026-11-07" :scope "Specialist computing and perceived latency" :remaining "Presentation latency trace requires Windows privileges; input/startup/shutdown root cause unresolved. Device probes, accelerated workloads, GSA adapter and both adiabatic backends remain unimplemented.")
-      (entry :date "2026-11-07" :scope "Remaining requested game controls and device execution" :remaining "Variable AI seats, multiplayer GUI, voiceover/mono routing, live GSA, shared device kernels and native input-to-display latency remain open. Adiabatic harness is a local classical reference only; no physical quantum or energy recovery evidence."))
+      (entry :date "2026-11-07" :scope "Remaining requested game controls and device execution" :remaining "Variable AI seats, multiplayer GUI, voiceover/mono routing, live GSA, shared device kernels and native input-to-display latency remain open. Adiabatic harness is a local classical reference only; no physical quantum or energy recovery evidence.")
+      (entry :date "2026-11-16" :scope "Offline transaction worker verification" :remaining "Creusot/Pearlite and Verus worker-boundary proof obligations remain open; no whole-game latency or power-loss guarantee. Measure UI submission and end-to-end presentation latency on the target desktop; see proof ledger and PERFORMANCE."))
     ; rra — directives for Robot Repo Automaton (RRA) enforcing the Platonic Ideal root.
     (rra
       :target "robot-repo-automaton"
