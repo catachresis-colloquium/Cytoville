@@ -48,31 +48,31 @@ jobs:
           - subject: 0c9dc42948cbe4060149a7829d14cb21f330dd3f
             label: passed-0c9dc42
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ matrix.subject }}
           path: subject
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           repository: metadatastician/standards
           ref: e064539116c2dcfdf282a4749dbd58c69961c7e6
           path: _standards
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           repository: hyperpolymath/hypatia
           ref: be98f74ce93df200752f3798efa1305bfa3e0e10
           path: _hypatia
           persist-credentials: false
       - name: Setup Elixir 1.19.4 / OTP 28.3 (the oracle job's pins)
-        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        uses: erlef/setup-beam@v1.24.1
         with:
           elixir-version: '1.19.4'
           otp-version: '28.3'
       - name: Cache Hypatia Mix deps and build (the oracle job's key)
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         with:
           path: |
             _hypatia/deps
@@ -130,7 +130,7 @@ jobs:
           echo "crashes=$crashes of $RUNS"
       - name: Upload the evidence (backtraces, outputs; no raw cores)
         if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: oracle-diag-${{ matrix.label }}-${{ matrix.replica }}
           path: ${{ runner.temp }}/diag
