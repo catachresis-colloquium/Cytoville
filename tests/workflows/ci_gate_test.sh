@@ -48,6 +48,15 @@ for change in '.run_attempt=2' '.id=999' '.jobs=[]' '.jobs[0].name="not the requ
   jq "map(if (.jobs | length) > 0 then $change else . end)" "$scratch/good.json" > "$scratch/job.json"
   expect 2 "$scratch/job.json"
 done
+# A job row is judged by its job, not by the rest of its run: required jobs
+# that finished decide the row while an advisory job keeps the run open.
+running='map(if (.jobs | length) > 0 then .status="in_progress" | .conclusion=null else . end)'
+jq "$running" "$scratch/good.json" > "$scratch/running.json"
+expect 0 "$scratch/running.json"
+jq "$running | map(if (.jobs | length) > 0 then .jobs[0].conclusion=\"failure\" else . end)" "$scratch/good.json" > "$scratch/running.json"
+expect 1 "$scratch/running.json"
+jq "$running | map(if (.jobs | length) > 0 then .jobs[0].status=\"in_progress\" | .jobs[0].conclusion=null else . end)" "$scratch/good.json" > "$scratch/running.json"
+expect 2 "$scratch/running.json"
 printf 'not json\n' > "$scratch/malformed.json"
 expect 3 "$scratch/malformed.json"
 printf '{}\n' > "$scratch/malformed.json"

@@ -41,9 +41,11 @@ evaluate() {
             | if length == 1 then .[0] else null end) end) as $evidence
        | {path: ($need.path + (if $need.job == null then "" else " / " + $need.job end)),
           conclusion: ($evidence.conclusion // ""),
+          # A job row is judged by its own job alone, so a slow advisory job
+          # in the same run cannot hold a finished required lane pending.
           state: (if $run == null then "missing"
-                  elif $run.status != "completed" then "pending"
-                  elif ($run.conclusion != "success" and $run.conclusion != "failure") then "failed"
+                  elif $need.job == null and $run.status != "completed" then "pending"
+                  elif $need.job == null and ($run.conclusion != "success" and $run.conclusion != "failure") then "failed"
                   elif $evidence == null then "missing"
                   elif $evidence.status != "completed" then "pending"
                   elif $evidence.conclusion == "success" then "success"
@@ -84,7 +86,7 @@ while (( SECONDS < deadline )); do
   jq -r --arg sha "$TARGET_SHA" --arg event "$RUN_EVENT" --argjson required "$required" '
     . as $runs | [$required[] | select(.job != null) | .path] | unique[] as $path
     | [$runs[] | select(.head_sha == $sha and .event == $event and .path == $path)]
-    | max_by(.id) | select(. != null and .status == "completed")
+    | max_by(.id) | select(. != null)
     | [.id, .run_attempt] | @tsv' "$scratch/runs.json" > "$scratch/selected.tsv"
   while IFS=$'\t' read -r run_id attempt; do
     [[ $run_id =~ ^[0-9]+$ && $attempt =~ ^[0-9]+$ ]] || { echo 'ERROR: invalid run identity' >&2; exit 1; }
