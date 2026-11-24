@@ -53,8 +53,9 @@ receipts are retained as observed, not silently relabelled or recalculated
 without their raw samples.
 
 The illustrated city's cold first construction took 173.978 ms in this debug
-sample; subsequent redraws reused its image. The cache retains at most two
-current cell appearances and one city image. It invalidates cell images when
+sample; subsequent redraws reused its image. That version retained at most two
+current cell appearances and one city image. The selection-preview update adds
+one bounded cache slot for the selected specimen. It invalidates cell images when
 specimen, phase, expressed organelles, membrane, accent or pattern changes;
 travel, resource values and names do not rerasterize them. City content changes
 invalidate the cached map. Animation changes transforms, not layout dimensions.
