@@ -66,7 +66,10 @@ stop_game() {
     wait "$game_pid" # A crash or nonzero exit fails acceptance.
     local pattern=${LLVM_PROFILE_FILE//%p/$game_pid} profile found=0
     [[ $LLVM_PROFILE_FILE == *%p* ]] || { echo 'FAIL: profile lacks process identity' >&2; return 1; }
-    pattern=${pattern//%m/*}
+    # show-env uses nextest-style merge pools, e.g. %2m, as well as plain %m.
+    while [[ $pattern =~ %[0-9]*m ]]; do
+      pattern=${pattern//${BASH_REMATCH[0]}/*}
+    done
     while IFS= read -r profile; do
       if [[ -s $profile ]]; then found=1; fi
     done < <(compgen -G "$pattern" || true)

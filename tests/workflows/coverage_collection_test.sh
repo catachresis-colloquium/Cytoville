@@ -16,11 +16,19 @@ SH
 cat > "$scratch/bin/cargo" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
-  'llvm-cov show-env --sh --no-cfg-coverage')
+  'llvm-cov show-env --no-cfg-coverage')
     [[ ${FAIL_STAGE:-environment} != environment ]] || exit 19
-    echo 'export CYTOVILLE_INSTRUMENTED_TEST=1' ;;
+    case "$FAIL_STAGE" in
+      command) printf '%s\n' 'RUSTFLAGS=$(touch "$INJECTION_MARKER")'; exit 0 ;;
+      quoting) printf '%s\n' "RUSTFLAGS='unterminated"; exit 0 ;;
+      missing) echo 'CARGO_LLVM_COV=1'; exit 0 ;;
+    esac
+    printf '%s\n' "RUSTFLAGS='-C instrument-coverage'" 'LLVM_PROFILE_FILE=/tmp/mock-%p-%2m.profraw' 'CARGO_LLVM_COV_TARGET_DIR=/tmp/mock'
+    [[ $FAIL_STAGE != duplicate ]] || echo 'RUSTFLAGS=other'
+    [[ $FAIL_STAGE != unexpected ]] || echo 'PATH=/tmp/untrusted'
+    exit 0 ;;
   'llvm-cov clean --workspace')
-    [[ ${CYTOVILLE_INSTRUMENTED_TEST:-0} == 1 ]] || exit 99
+    [[ $RUSTFLAGS == '-C instrument-coverage' && $LLVM_PROFILE_FILE == /tmp/mock-%p-%2m.profraw ]] || exit 99
     [[ $FAIL_STAGE != clean ]] || exit 20 ;;
   'test --workspace --all-targets --locked') exit 21 ;;
   *) echo "unexpected command: $*" >&2; exit 99 ;;
@@ -36,6 +44,14 @@ for stage in environment clean test; do
     cat "$scratch/log"; echo "FAIL: $stage failure was swallowed" >&2; exit 1;
   }
   expected=$((expected + 1))
+done
+export INJECTION_MARKER="$scratch/injected"
+for stage in command quoting missing duplicate unexpected; do
+  status=0
+  FAIL_STAGE=$stage bash "$root/scripts/collect-coverage.sh" "$scratch/source" "$scratch/refused-$stage" candidate "$scratch/suite" > "$scratch/log" 2>&1 || status=$?
+  [[ $status == 2 && ! -e $scratch/refused-$stage/receipt.json && ! -e $INJECTION_MARKER ]] || {
+    cat "$scratch/log"; echo "FAIL: unsafe $stage environment accepted" >&2; exit 1;
+  }
 done
 status=0
 bash "$root/scripts/collect-coverage.sh" "$scratch/source" "$scratch/wrong" base "$scratch/suite" > "$scratch/log" 2>&1 || status=$?

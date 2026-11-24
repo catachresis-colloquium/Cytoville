@@ -38,6 +38,9 @@ cached report or percentage typed into configuration.
   the existing application timer and emit nonempty, process-specific profiles.
   Forced cleanup cannot satisfy this requirement. Reports are exported only
   after every journey and language test succeeds.
+  Tool environment settings are parsed as a restricted data format, with an
+  explicit key/value allowlist. Unsupported quoting or shell metacharacters
+  refuse measurement; the collector does not execute generated shell code.
 * Elixir: OTP 28.3.1, Elixir 1.19.4, the complete `server` test suite and actual
   Rust/Zig worker; exported Erlang cover data. The canonical Proven converter
   maps executable lines to source and supplies LCOV. Generated line zero is
