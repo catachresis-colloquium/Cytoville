@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: catachresis-colloquium/Cytoville
-          ref: 0b68bb1241e3b8bff6d8cf289b38ad86404dd805
+          ref: 4b88d8aa492144834fd37ea6ff0e7a730d77d195
           path: policy
           persist-credentials: false
       - name: Resolve exact source revision
@@ -100,7 +100,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: catachresis-colloquium/Cytoville
-          ref: 0b68bb1241e3b8bff6d8cf289b38ad86404dd805
+          ref: 4b88d8aa492144834fd37ea6ff0e7a730d77d195
           persist-credentials: false
       - name: Install verified Bun 1.4.2
         run: |
