@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const sha = /^[0-9a-f]{40}$/;
-const scope = 'linux-rust-workspace-all-targets+elixir-server-v1';
+const scope = 'linux-rust-workspace+graphical+tls+elixir-server-v2';
 function requireThat(condition, message) {
   if (!condition) throw new Error(message);
 }

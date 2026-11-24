@@ -15,16 +15,28 @@ printf '%s\n' "$CANDIDATE_SHA"
 SH
 cat > "$scratch/bin/cargo" <<'SH'
 #!/usr/bin/env bash
-echo 'intentional test failure' >&2
-exit 19
+case "$*" in
+  'llvm-cov show-env --sh --no-cfg-coverage')
+    [[ ${FAIL_STAGE:-environment} != environment ]] || exit 19
+    echo 'export CYTOVILLE_INSTRUMENTED_TEST=1' ;;
+  'llvm-cov clean --workspace')
+    [[ ${CYTOVILLE_INSTRUMENTED_TEST:-0} == 1 ]] || exit 99
+    [[ $FAIL_STAGE != clean ]] || exit 20 ;;
+  'test --workspace --all-targets --locked') exit 21 ;;
+  *) echo "unexpected command: $*" >&2; exit 99 ;;
+esac
 SH
 chmod +x "$scratch/bin/git" "$scratch/bin/cargo"
 export PATH="$scratch/bin:$PATH"
-status=0
-bash "$root/scripts/collect-coverage.sh" "$scratch/source" "$scratch/failed" candidate "$scratch/suite" > "$scratch/log" 2>&1 || status=$?
-[[ $status == 19 && ! -e $scratch/failed/receipt.json ]] || {
-  cat "$scratch/log"; echo 'FAIL: test failure was swallowed' >&2; exit 1;
-}
+expected=19
+for stage in environment clean test; do
+  status=0
+  FAIL_STAGE=$stage bash "$root/scripts/collect-coverage.sh" "$scratch/source" "$scratch/failed-$stage" candidate "$scratch/suite" > "$scratch/log" 2>&1 || status=$?
+  [[ $status == "$expected" && ! -e $scratch/failed-$stage/receipt.json ]] || {
+    cat "$scratch/log"; echo "FAIL: $stage failure was swallowed" >&2; exit 1;
+  }
+  expected=$((expected + 1))
+done
 status=0
 bash "$root/scripts/collect-coverage.sh" "$scratch/source" "$scratch/wrong" base "$scratch/suite" > "$scratch/log" 2>&1 || status=$?
 [[ $status != 0 && ! -e $scratch/wrong ]] || { echo 'FAIL: wrong revision accepted' >&2; exit 1; }

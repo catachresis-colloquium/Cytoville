@@ -12,6 +12,11 @@ and a maximum five percentage-point decline. The replacement is under
 validation. The three built-in coverage rules and the merge queue remain
 unchanged. A prepared implementation is not evidence that coverage is 80%.
 
+The first hosted measurement, run 45491027535, correctly failed Rust at
+3235/5056 executable lines (63.983%); Elixir passed at 167/202 (82.673%).
+Both revisions had identical counts. Scope v2 now also instruments the existing
+UMS/network/TLS and graphical journeys; its results remain pending.
+
 == Measurement contract
 
 The CI workflow measures the exact event's base and candidate SHA on separate
@@ -22,9 +27,17 @@ cached report or percentage typed into configuration.
 
 * Rust: cargo-llvm-cov 0.9.1, Rust 1.99.1 and llvm-tools-preview; all workspace
   members and all targets, locked dependencies, no coverage-only cfg and no
-  package/path/test-name exclusions. Bevy is included. This is LLVM executable
+  custom package/path exclusions. The tool's default exclusions for dependencies,
+  generated artifacts and standalone tests/examples/benches remain in effect.
+  Bevy application code is included. This is LLVM executable
   line coverage, including instrumented test targets; it is not branch coverage
   or a claim that every source line executes on Linux.
+  The same immutable harness drives both revisions through UMS packaging,
+  plaintext and verified loopback TLS, real Bevy input, save/reload, reconnect
+  and settings. Instrumented graphical processes must exit successfully through
+  the existing application timer and emit nonempty, process-specific profiles.
+  Forced cleanup cannot satisfy this requirement. Reports are exported only
+  after every journey and language test succeeds.
 * Elixir: OTP 28.3.1, Elixir 1.19.4, the complete `server` test suite and actual
   Rust/Zig worker; exported Erlang cover data. The canonical Proven converter
   maps executable lines to source and supplies LCOV. Generated line zero is
@@ -57,7 +70,7 @@ gate replaces the raw coverage threshold, not Hypatia's evidence classifier,
 Creusot/Pearlite implementation contracts, Verus scopes or ABI/FFI proofs.
 It measures neither Zig nor Idris2 executable coverage; those languages keep
 their separate build, conformance and proof obligations. Windows/macOS code,
-graphical playthrough coverage, mutation adequacy and hardware measurements
+mutation adequacy and hardware measurements
 remain unestablished by these Linux line counts.
 
 The coverage collector and judge are checked out at an immutable policy

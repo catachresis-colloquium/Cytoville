@@ -23,7 +23,7 @@ function fixture(change = () => {}) {
     const reports = { 'llvm.json': llvm(), 'elixir.lcov':
       'SF:lib/server.ex\nDA:1,1\nDA:2,1\nDA:3,1\nDA:4,1\nDA:5,0\nLF:5\nLH:4\nend_of_record\n' };
     const receipt = { schema: 'cytoville.raw-coverage/1',
-      scope: 'linux-rust-workspace-all-targets+elixir-server-v1', repo: expected.repo,
+      scope: 'linux-rust-workspace+graphical+tls+elixir-server-v2', repo: expected.repo,
       base: expected.base, candidate: expected.candidate, commit: expected[role],
       role, run_id: expected.run, run_attempt: expected.attempt, event: expected.event,
       tests_passed: true, sha256: {} };

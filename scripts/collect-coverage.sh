@@ -3,6 +3,7 @@
 # Repository adapter for the canonical Proven raw collectors. No proven-test claim.
 # Arguments: checkout output-directory role canonical-suite
 set -euo pipefail
+policy=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 checkout=$(realpath "${1:?}")
 output=$(realpath -m "${2:?}")
 role=${3:?}
@@ -17,9 +18,17 @@ cd "$checkout"
 [[ $(git rev-parse HEAD) == "$commit" ]] || { echo 'Wrong coverage checkout' >&2; exit 1; }
 [[ ! -e $output ]] || { echo 'Refusing stale coverage output' >&2; exit 1; }
 mkdir -p "$output"
-# Same workspace command as the canonical collector, with all targets explicit.
-# No package, path or test-name exclusion; no --ignore-run-fail or cfg(coverage).
-cargo llvm-cov --workspace --all-targets --locked --no-cfg-coverage --json --output-path "$output/llvm.json"
+# Instrument both Cargo tests and the binaries exercised by real input journeys.
+# Assignment preserves show-env's failure status (source <(...) would hide it).
+coverage_env=$(cargo llvm-cov show-env --sh --no-cfg-coverage)
+eval "$coverage_env"
+cargo llvm-cov clean --workspace
+cargo test --workspace --all-targets --locked
+CYTOVILLE_ACCEPTANCE_ROOT="$checkout" bash "$policy/scripts/cytoville-e2e.sh"
+CYTOVILLE_ACCEPTANCE_ROOT="$checkout" CYTOVILLE_E2E_TLS=1 bash "$policy/scripts/cytoville-e2e.sh"
+CYTOVILLE_ACCEPTANCE_ROOT="$checkout" CYTOVILLE_ACCEPTANCE_OUTPUT="$output/graphical" \
+  CYTOVILLE_ACCEPTANCE_COVERAGE=1 \
+  xvfb-run -a -s '-screen 0 1440x960x24 -nolisten tcp' bash "$policy/scripts/cytoville-graphical-acceptance.sh"
 cargo build --locked -p cytoville-runtime --bin cytoville-server
 worker="$(cargo metadata --format-version 1 --no-deps | jq -er .target_directory)/debug/cytoville-server"
 (
@@ -29,6 +38,7 @@ worker="$(cargo metadata --format-version 1 --no-deps | jq -er .target_directory
   CYTOVILLE_WORKER="$worker" MIX_ENV=test mix test --cover --export-coverage queue
   MIX_ENV=test mix run --no-start "$suite/scripts/coverdata-to-lcov.exs" cover/queue.coverdata "$output/elixir.lcov"
 )
+cargo llvm-cov report --json --output-path "$output/llvm.json"
 for report in llvm.json elixir.lcov; do
   tool=cargo-llvm-cov
   version=$(cargo llvm-cov --version)
@@ -43,7 +53,7 @@ jq -n --arg repo "$GITHUB_REPOSITORY" --arg commit "$commit" --arg role "$role" 
   --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" \
   --arg rust "$(sha256sum "$output/llvm.json" | cut -d ' ' -f 1)" \
   --arg elixir "$(sha256sum "$output/elixir.lcov" | cut -d ' ' -f 1)" \
-  '{schema:"cytoville.raw-coverage/1",scope:"linux-rust-workspace-all-targets+elixir-server-v1",
+  '{schema:"cytoville.raw-coverage/1",scope:"linux-rust-workspace+graphical+tls+elixir-server-v2",
     repo:$repo,commit:$commit,base:$base,candidate:$candidate,event:$event,
     run_id:$run,run_attempt:$attempt,role:$role,tests_passed:true,
     sha256:{"llvm.json":$rust,"elixir.lcov":$elixir}}' > "$output/receipt.json"
