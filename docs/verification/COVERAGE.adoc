@@ -1,0 +1,88 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Measured coverage and the merge queue
+
+== Purpose and present state
+
+GitHub rule suite 5344545411 rejected Cytoville's merge-group update with
+`Code coverage checks require a pull request`. Its workflow, signature and
+required-status evaluations passed. PR #17 is not merged.
+
+The owner selected queue-compatible measured coverage, retaining an 80% floor
+and a maximum five percentage-point decline. The replacement is under
+validation. The three built-in coverage rules and the merge queue remain
+unchanged. A prepared implementation is not evidence that coverage is 80%.
+
+== Measurement contract
+
+The CI workflow measures the exact event's base and candidate SHA on separate
+fresh hosted Linux runners. For pull requests these are `base.sha` and
+`head.sha`; for the queue they are `merge_group.base_sha` and
+`merge_group.head_sha`. It never substitutes a branch name, previous green run,
+cached report or percentage typed into configuration.
+
+* Rust: cargo-llvm-cov 0.9.1, Rust 1.99.1 and llvm-tools-preview; all workspace
+  members and all targets, locked dependencies, no coverage-only cfg and no
+  package/path/test-name exclusions. Bevy is included. This is LLVM executable
+  line coverage, including instrumented test targets; it is not branch coverage
+  or a claim that every source line executes on Linux.
+* Elixir: OTP 28.3.1, Elixir 1.19.4, the complete `server` test suite and actual
+  Rust/Zig worker; exported Erlang cover data. The canonical Proven converter
+  maps executable lines to source and supplies LCOV. Generated line zero is
+  absent from this format. No application module exclusion is requested.
+* Each language must independently meet the floor and regression bound.
+  Counts are compared as exact rational numbers. Display rounding cannot turn
+  79.999% into a pass, or hide a decline exceeding five points.
+* Both measurement jobs must succeed. Missing exports, failed tests, cancelled
+  jobs, incorrect SHA/event/run/attempt, empty reports, malformed counts,
+  mismatched totals and modified report digests are refused.
+
+Raw reports retain the canonical
+`hypatia.proven-coverage.report-meta/1` sidecar. The repository receipt binds
+both revisions, scope, attempt and file digests. Artifacts from the current
+workflow attempt are retained for fourteen days, including incomplete output
+after failures; incomplete output cannot satisfy the judge.
+
+== Canonical source and trust boundary
+
+The collection commands and sidecar convention follow
+`hyperpolymath/proven-cicd-and-workflows` at
+`d28d73ef10c623b507e98ffddb040268e29b5443`. Its
+`scripts/coverdata-to-lcov.exs` is executed directly from that pinned checkout.
+Its existing collector is deliberately advisory and can retain reports after
+test failures. Cytoville's small adapter uses strict command exits and does
+not reinterpret that advisory outcome as a pass.
+
+Hypatia's proven-versus-raw evidence classification remains separate. This
+gate replaces the raw coverage threshold, not Hypatia's evidence classifier,
+Creusot/Pearlite implementation contracts, Verus scopes or ABI/FFI proofs.
+It measures neither Zig nor Idris2 executable coverage; those languages keep
+their separate build, conformance and proof obligations. Windows/macOS code,
+graphical playthrough coverage, mutation adequacy and hardware measurements
+remain unestablished by these Linux line counts.
+
+The coverage collector and judge are checked out at an immutable policy
+revision, independent of candidate source. The organization-required CI
+workflow must be advanced to the validated workflow revision before protection
+is replaced. Its `CI/gate` requires the coverage judge as well as the existing
+immutable required-workflow collector. A PR-editable success with the same
+check name is not sufficient evidence of enforcement.
+
+Source builds and tests execute candidate code on disposable hosted runners,
+with read-only permissions and no checkout credentials. Digests detect
+accidental report substitution; they are not cryptographic attestation of an
+adversarial build. Protection depends on the pinned workflow, code review and
+the other required checks too.
+
+== Activation checklist
+
+. Pass positive and negative fixture tests, security lint and action-lock checks.
+. Obtain actual base/candidate measurements and satisfy 80%/five points in
+  both languages. Improve meaningful tests if either falls short.
+. Verify the pinned required workflow runs the new coverage jobs for PRs and
+  the queue; show the owner the measured results and exact protection diff.
+. Replace only Cytoville's incompatible built-in coverage guards once the
+  equivalent enforcement is effective. Preserve the queue, strict checks,
+  signatures and all unrelated rules; do not weaken other repositories.
+. Re-enqueue PR #17 and verify the resulting main commit and rule-suite pass.
+
+No activation step is marked complete merely because its code exists.
