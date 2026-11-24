@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: catachresis-colloquium/Cytoville
-          ref: 1967e15943e8dec573876103d7185ebc3bf8147e
+          ref: c03af8d9bc51b75778e076f21a6882eab8faa2f3
           path: policy
           persist-credentials: false
       - name: Resolve exact source revision
@@ -58,11 +58,7 @@ jobs:
           set -euo pipefail
           rustup toolchain install 1.99.1 --profile minimal --component llvm-tools-preview
           rustup default 1.99.1
-          curl --proto '=https' --proto-redir '=https' --fail --location --retry 3 \
-            https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz -o "$RUNNER_TEMP/zig.tar.xz"
-          echo "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  $RUNNER_TEMP/zig.tar.xz" | sha256sum --check --strict
-          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/zig-x86_64-linux-0.16.0" >> "$GITHUB_PATH"
+          bash policy/scripts/install-ci-native.sh --zig-only
           curl --proto '=https' --proto-redir '=https' --fail --location --retry 3 \
             https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz -o "$RUNNER_TEMP/llvm-cov.tar.gz"
           echo "b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a  $RUNNER_TEMP/llvm-cov.tar.gz" | sha256sum --check --strict
@@ -70,7 +66,7 @@ jobs:
           tar -xzf "$RUNNER_TEMP/llvm-cov.tar.gz" -C "$RUNNER_TEMP/llvm-cov-bin"
           echo "$RUNNER_TEMP/llvm-cov-bin" >> "$GITHUB_PATH"
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libasound2-dev libudev-dev libx11-dev libxrandr-dev libxi-dev libxkbcommon-dev libwayland-dev libssl-dev
+          sudo apt-get install -y build-essential pkg-config libasound2-dev libudev-dev libx11-dev libxrandr-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libssl-dev openssl xvfb xauth xdotool imagemagick libvulkan1 mesa-vulkan-drivers
       - name: Install pinned BEAM
         uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
         with:
@@ -104,7 +100,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: catachresis-colloquium/Cytoville
-          ref: 1967e15943e8dec573876103d7185ebc3bf8147e
+          ref: c03af8d9bc51b75778e076f21a6882eab8faa2f3
           persist-credentials: false
       - name: Install verified Bun 1.4.2
         run: |
@@ -119,6 +115,7 @@ jobs:
         run: |
           bun test tests/workflows/coverage_gate_test.mjs
           bash tests/workflows/coverage_collection_test.sh
+          bash tests/workflows/ci_native_download_test.sh
       - name: Download this attempt's base report
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
