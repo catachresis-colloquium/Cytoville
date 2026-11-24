@@ -21,6 +21,18 @@ expect() {
   fi
 }
 expect 0 "$scratch/good.json"
+# Target checkout content must not replace the policy or checker resolved
+# beside this trusted script. This is a local control, not ruleset evidence.
+mkdir -p "$scratch/untrusted/ci" "$scratch/untrusted/scripts"
+printf '.github/workflows/codeql.yml\n' > "$scratch/untrusted/ci/required-workflows.txt"
+printf 'touch "%s"\nexit 0\n' "$scratch/executed-untrusted" > "$scratch/untrusted/scripts/check-ci-gate.sh"
+jq 'map(select(.path != ".github/workflows/secret-scanner.yml"))' "$scratch/good.json" > "$scratch/no-secrets.json"
+(
+  cd "$scratch/untrusted"
+  expect 2 "$scratch/no-secrets.json"
+  expect 0 "$scratch/good.json"
+)
+[[ ! -e "$scratch/executed-untrusted" ]] || { echo 'FAIL: target checker executed' >&2; exit 1; }
 for conclusion in failure cancelled timed_out skipped neutral action_required stale; do
   jq --arg result "$conclusion" '.[0].conclusion=$result' "$scratch/good.json" > "$scratch/bad.json"
   expect 1 "$scratch/bad.json"

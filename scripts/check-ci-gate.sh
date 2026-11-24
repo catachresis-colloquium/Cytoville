@@ -74,7 +74,9 @@ fi
 [[ $RUN_EVENT == pull_request || $RUN_EVENT == merge_group ]] || { echo 'ERROR: unsupported event' >&2; exit 3; }
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
-deadline=$((SECONDS + 3300))
+# Rust's sequential Windows + Linux + verdict budgets total 81 minutes.
+# Allow another 24 minutes for runner scheduling and evidence propagation.
+deadline=$((SECONDS + 6300))
 previous=""
 while (( SECONDS < deadline )); do
   # Pagination is required: an incomplete first page must not become green.

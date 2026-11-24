@@ -76,7 +76,9 @@ equivalent workload comparison and does not justify changing the default.
 `startup_to_first_update_ms` excludes process loading before profiler startup
 and does not mean first visible frame. `exit_request_to_app_return_ms` is
 recorded only when an AppExit message was observed; it excludes teardown after
-App::run returns. An absent metric means no observation, not zero latency.
+App::run returns. Pending checkpoint work after that point is measured
+separately as `local_shutdown_drain_ms`; it cannot inflate the app-return
+metric. An absent metric means no observation, not zero latency.
 
 For isolated diagnostics, `--low-latency-probe` requests at most one queued
 frame (an API hint), and `--no-audio-probe` omits audio plugin registration.

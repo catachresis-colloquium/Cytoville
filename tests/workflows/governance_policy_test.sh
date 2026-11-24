@@ -256,6 +256,33 @@ assert.equal(fork.jobs.deed.steps.find((s) => s.env?.BASE_REF).env.BASE_REF,
   "${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha || github.base_ref }}");
 console.log("PASS: required producers and CI/gate run for PR and merge queue; missing and filtered wiring refused");
 const e2e = readYaml("e2e.yml");
+// The collector must outlive the sequential native-platform jobs, and its
+// runner must leave time for the collector's explicit failure at the deadline.
+const deadline = Number(read("scripts/check-ci-gate.sh")
+  .match(/deadline=\$\(\(SECONDS \+ (\d+)\)\)/)?.[1]);
+const nativeMinutes = rust.jobs["windows-native"]["timeout-minutes"] +
+  e2e.jobs.acceptance["timeout-minutes"] + rust.jobs["rust-ci"]["timeout-minutes"];
+assert.ok(Number.isFinite(deadline) && deadline >= (nativeMinutes + 15) * 60,
+  "collector must allow sequential native jobs plus scheduling headroom");
+assert.ok(aggregate.jobs.gate["timeout-minutes"] * 60 >= deadline + 300,
+  "aggregate runner must outlive the collector by at least five minutes");
+console.log("PASS: aggregate budgets cover sequential native acceptance");
+
+// Synthetic merge refs support analysis but not a code-scanning upload.
+// Keep analysis and zero-critical enforcement unconditional.
+const analysis = readYaml("codeql.yml").jobs.analyze.steps
+  .find((s) => String(s.uses ?? "").startsWith("github/codeql-action/analyze@"));
+assert.ok(analysis);
+assert.equal(analysis.if, undefined);
+assert.equal(analysis.with.upload, "${{ (github.event_name != 'merge_group' && 'always') || 'never' }}");
+const hypatia = readYaml("hypatia-scan.yml").jobs.hypatia.steps;
+const sarif = hypatia.find((s) => String(s.uses ?? "").startsWith("github/codeql-action/upload-sarif@"));
+assert.equal(sarif.if, "github.event_name != 'merge_group' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)");
+const critical = hypatia.find((s) => s.name === "Enforce zero critical Hypatia findings");
+assert.ok(critical);
+assert.equal(critical.if, undefined);
+assert.equal(critical["continue-on-error"], undefined);
+console.log("PASS: merge queue keeps security analysis and gates without unsupported SARIF uploads");
 assert.equal(rust.jobs.acceptance.uses, "./.github/workflows/e2e.yml");
 assert.equal(rust.jobs.acceptance.needs, "windows-native");
 const gate = rust.jobs["rust-ci"];

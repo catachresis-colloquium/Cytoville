@@ -26,7 +26,7 @@ read-only Actions token. Every producer also runs for merge-queue commits.
 The production proof caller stays direct, preserving its pinned-ref resolver.
 
 Missing, unfinished, cancelled, skipped, neutral or failed required evidence
-cannot produce a green aggregate. Collection has a 55-minute deadline and
+cannot produce a green aggregate. Collection has a 105-minute deadline and
 refuses API errors. Job-specific entries are bound to the selected run and
 attempt; an old successful attempt cannot hide a failed rerun. Refusal tests
 exercise the actual evaluator, and governance tests check trigger wiring.
