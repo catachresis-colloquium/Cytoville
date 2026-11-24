@@ -221,6 +221,23 @@ key F5
 wait_for 'new game applies persisted rival settings' jq -e \
   '.game.turn == 2 and .game.actors[1].name == "Ada" and .ai_tick == 0 and (.rival_settings.inject_weevil | not) and .rival_settings.capability == 0 and any(.trace.tropes[]; .kind == "baseline-intent")' "$scratch/configured.json"
 shot 15-configured-game
+# Retain compact-window evidence separately from the fixed-coordinate journey.
+# Page navigation changes presentation only; it must not advance the runtime.
+before="$(jq -c . "$scratch/configured.json")"
+xdotool windowsize --sync "$window" 1280 720
+sleep 2
+shot 16-compact-game
+key Next
+shot 17-compact-checklist
+key Prior
+key Escape
+shot 18-compact-selection
+key Next
+shot 19-compact-objectives
+mv "$scratch/configured.json" "$scratch/configured-before-layout.json"
+key F5
+wait_for 'viewport navigation state saved from memory' test -s "$scratch/configured.json"
+[[ "$(jq -c . "$scratch/configured.json")" == "$before" ]] || { echo 'FAIL: viewport navigation changed saved game'; exit 1; }
 stop_game
 printf '%s\n' 'PASS: real Bevy input, offline save/reload, native rival, loopback TLS command and resume; all settings tabs, presentation persistence and configured baseline rival.' \
-  'Scope: 1440x960 X11; not a frame-rate, art-quality or accessibility certification.' | tee "$out/receipt.txt"
+  'Scope: 1440x960 X11 journey plus 1280x720 layout screenshots; not a frame-rate, art-quality or accessibility certification.' | tee "$out/receipt.txt"

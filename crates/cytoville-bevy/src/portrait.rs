@@ -5,7 +5,7 @@ use bevy::{
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
-use cytoville_core::{Actor, Look};
+use cytoville_core::{Actor, Look, content::Specimen};
 #[derive(PartialEq)]
 struct Appearance {
     specimen: String,
@@ -27,10 +27,10 @@ impl Appearance {
         }
     }
 }
-/// Keep only the two current appearances. Travel, names and resource changes do
-/// not rerasterize or upload an unchanged 256×256 texture.
+/// Keep the two current appearances and the selected menu specimen. Travel,
+/// names and resource changes do not rerasterize an unchanged 256×256 texture.
 #[derive(Resource, Default)]
-pub struct Cache([Option<(Appearance, Handle<Image>)>; 2]);
+pub struct Cache([Option<(Appearance, Handle<Image>)>; 3]);
 impl Cache {
     pub fn get(
         &mut self,
@@ -39,14 +39,42 @@ impl Cache {
         look: &Look,
         images: &mut Assets<Image>,
     ) -> Handle<Image> {
-        let key = Appearance::of(a, look);
+        self.get_appearance(seat, Appearance::of(a, look), images)
+    }
+
+    pub fn specimen(
+        &mut self,
+        id: &str,
+        sp: &Specimen,
+        images: &mut Assets<Image>,
+    ) -> Handle<Image> {
+        self.get_appearance(
+            2,
+            Appearance {
+                specimen: id.into(),
+                phase: "G1".into(),
+                organelles: sp.start_organelles.clone(),
+                membrane: sp.body.clone(),
+                accent: sp.accent.clone(),
+                pattern: "plain".into(),
+            },
+            images,
+        )
+    }
+
+    fn get_appearance(
+        &mut self,
+        seat: usize,
+        key: Appearance,
+        images: &mut Assets<Image>,
+    ) -> Handle<Image> {
         let slot = &mut self.0[seat];
         if let Some((previous, handle)) = slot
             && *previous == key
         {
             return handle.clone();
         }
-        let handle = images.add(image(a, look));
+        let handle = images.add(image(&key));
         *slot = Some((key, handle.clone()));
         handle
     }
@@ -65,11 +93,12 @@ fn rgb(s: &str, fallback: [u8; 3]) -> [u8; 3] {
     }
     c
 }
-pub fn image(a: &Actor, look: &Look) -> Image {
+fn image(a: &Appearance) -> Image {
     const N: usize = 256;
     let mut data = vec![0; N * N * 4];
-    let body = rgb(&look.membrane, [91, 219, 170]);
-    let accent = rgb(&look.accent, [250, 180, 80]);
+    let body = rgb(&a.membrane, [91, 219, 170]);
+    let accent = rgb(&a.accent, [250, 180, 80]);
+    let has = |id: &str| a.organelles.iter().any(|o| o == id);
     let inside = |x: f32, y: f32| -> bool {
         match a.specimen.as_str() {
             "amoeba" => {
@@ -109,8 +138,8 @@ pub fn image(a: &Actor, look: &Look) -> Image {
                 [0; 4]
             };
             if cell {
-                if look.pattern == "spots" && ((x * 13.0).sin() * (y * 13.0).sin()) > 0.72
-                    || look.pattern == "stripes" && (x * 32.0 + y * 12.0).sin() > 0.82
+                if a.pattern == "spots" && ((x * 13.0).sin() * (y * 13.0).sin()) > 0.72
+                    || a.pattern == "stripes" && (x * 32.0 + y * 12.0).sin() > 0.82
                 {
                     color = [body[0], body[1], body[2], 150];
                 }
@@ -150,14 +179,14 @@ pub fn image(a: &Actor, look: &Look) -> Image {
                 }
             }
             if !cell
-                && (a.has("cilia") || a.has("basal") || a.specimen == "didinium")
+                && (has("cilia") || has("basal") || a.specimen == "didinium")
                 && ((x * 0.93, y * 0.93).0 != 0.0)
                 && inside(x * 0.9, y * 0.9)
                 && (y.atan2(x) * 40.0).sin() > 0.8
             {
                 color = [body[0], body[1], body[2], 210];
             }
-            if a.has("flagellum")
+            if has("flagellum")
                 && x > 0.7
                 && x < 1.08
                 && (y - 0.16 * ((x - 0.7) * 14.0).sin()).abs() < 0.015
@@ -183,6 +212,38 @@ pub fn image(a: &Actor, look: &Look) -> Image {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn specimen_preview_matches_a_new_game_without_displacing_actor_textures() {
+        let content = cytoville_core::Content::builtin();
+        let mut cache = Cache::default();
+        let mut images = Assets::default();
+        for id in &content.specimen_order {
+            let game = cytoville_core::turn::new_game(
+                &content,
+                id,
+                "fresh-daughter",
+                "standard",
+                7,
+                false,
+            )
+            .unwrap();
+            let playing = cache.get(0, &game.actors[0], &game.looks[0], &mut images);
+            let preview = cache.specimen(id, &content.specimens[id], &mut images);
+            assert!(
+                images.get(&playing).unwrap().data == images.get(&preview).unwrap().data,
+                "preview differs from the starting cell: {id}"
+            );
+            assert_eq!(
+                preview,
+                cache.specimen(id, &content.specimens[id], &mut images)
+            );
+            assert_eq!(
+                playing,
+                cache.get(0, &game.actors[0], &game.looks[0], &mut images)
+            );
+        }
+    }
+
     #[test]
     fn cache_ignores_gameplay_fields_but_tracks_visible_appearance() {
         let rt = cytoville_runtime::Runtime::new(
