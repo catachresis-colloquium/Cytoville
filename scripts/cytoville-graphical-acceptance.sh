@@ -238,6 +238,13 @@ shot 19-compact-objectives
 # The second scenario is visible here after Page Down in the 720p window.
 click 250 220
 shot 20-compact-scrolled-selection-change
+# The unchanged specimen heading at the top must remain at the same offset.
+# Compare only that static strip, excluding changed scenario text and hover.
+image_tool=convert
+[[ -z "${CYTOVILLE_XWD_FRAMEBUFFER:-}" ]] || image_tool=magick-im7.q16
+strip_before=$("$image_tool" "$out/19-compact-objectives.png" -crop 700x120+20+0 +repage -format '%#' info:)
+strip_after=$("$image_tool" "$out/20-compact-scrolled-selection-change.png" -crop 700x120+20+0 +repage -format '%#' info:)
+[[ -n "$strip_before" && "$strip_before" == "$strip_after" ]] || { echo 'FAIL: scenario change moved the scrolled selection viewport'; exit 1; }
 mv "$scratch/configured.json" "$scratch/configured-before-layout.json"
 key F5
 wait_for 'viewport navigation state saved from memory' test -s "$scratch/configured.json"

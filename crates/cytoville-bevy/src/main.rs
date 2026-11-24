@@ -778,6 +778,11 @@ fn scroll_screen(
         return;
     }
     for (node, mut scroll) in &mut roots {
+        // A rebuilt root has no layout until PostUpdate. Do not clamp its
+        // restored offset against the temporary zero-sized ComputedNode.
+        if node.is_empty() {
+            continue;
+        }
         let height = node.size().y * node.inverse_scale_factor;
         let max = ((node.content_size().y - node.size().y) * node.inverse_scale_factor).max(0.0);
         let next = if keys.just_pressed(KeyCode::PageDown) {
@@ -1075,7 +1080,8 @@ mod tests {
         .init_resource::<Assets<Image>>()
         .init_resource::<portrait::Cache>()
         .init_resource::<city::Artwork>()
-        .add_systems(Update, render)
+        .init_resource::<ButtonInput<KeyCode>>()
+        .add_systems(Update, (render, scroll_screen).chain())
         .add_observer(interact);
         app.update();
         for (action, expected_screen, expected_y) in [
