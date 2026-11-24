@@ -41,6 +41,9 @@ cached report or percentage typed into configuration.
   Tool environment settings are parsed as a restricted data format, with an
   explicit key/value allowlist. Unsupported quoting or shell metacharacters
   refuse measurement; the collector does not execute generated shell code.
+  The public `--no-rustc-wrapper` option selects ordinary Rust flags instead of
+  the tool's private wrapper-environment protocol. Dependencies may also compile
+  with instrumentation; the same default report exclusions apply to both sides.
 * Elixir: OTP 28.3.1, Elixir 1.19.4, the complete `server` test suite and actual
   Rust/Zig worker; exported Erlang cover data. The canonical Proven converter
   maps executable lines to source and supplies LCOV. Generated line zero is

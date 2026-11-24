@@ -16,7 +16,7 @@ SH
 cat > "$scratch/bin/cargo" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
-  'llvm-cov show-env --no-cfg-coverage')
+  'llvm-cov show-env --no-rustc-wrapper --no-cfg-coverage')
     [[ ${FAIL_STAGE:-environment} != environment ]] || exit 19
     case "$FAIL_STAGE" in
       command) printf '%s\n' 'RUSTFLAGS=$(touch "$INJECTION_MARKER")'; exit 0 ;;

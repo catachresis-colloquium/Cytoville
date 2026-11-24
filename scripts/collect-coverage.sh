@@ -22,7 +22,8 @@ mkdir -p "$output"
 # Read the pinned tool's environment as data, never as executable shell input.
 # This hosted Linux adapter accepts plain or single-quoted simple values only;
 # unsupported quoting, metacharacters, duplicate or unexpected keys fail closed.
-coverage_env=$(cargo llvm-cov show-env --no-cfg-coverage)
+# Use the public flags interface rather than the tool's internal wrapper protocol.
+coverage_env=$(cargo llvm-cov show-env --no-rustc-wrapper --no-cfg-coverage)
 declare -A coverage_keys=()
 safe_value='^[-a-zA-Z0-9_./:%=,+ ]*$'
 single_quote="'"
