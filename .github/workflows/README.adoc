@@ -25,9 +25,23 @@ in `ci/required-workflows.txt` for the exact commit SHA and event, with a
 read-only Actions token. Every producer also runs for merge-queue commits.
 The production proof caller stays direct, preserving its pinned-ref resolver.
 
+The collector, its refusal controls and the required-workflow manifest are
+checked out at `28781e1557c3d12cae37be26cd454321c35cbf1a`, independently of
+the PR's source tree. The target revision is metadata passed to the collector;
+it is never executed by this job. There is no shared concurrency group that
+would let a PR-editable copy cancel an independently enforced copy.
+
+*Deployment requirement:* a required-workflow ruleset must select this
+`ci.yml` at its reviewed immutable commit, with no bypass actors. Requiring
+the name `CI/gate` alone is insufficient: a PR could replace the whole caller.
+The settings rule is an independent trust boundary; local tests and a pinned
+checkout do not demonstrate that it has been installed. Policy updates need
+a new reviewed source commit and an explicit ruleset pin update.
+
 Missing, unfinished, cancelled, skipped, neutral or failed required evidence
-cannot produce a green aggregate. Collection has a 55-minute deadline and
-refuses API errors. Job-specific entries are bound to the selected run and
+cannot produce a green aggregate. Collection has a 105-minute deadline and
+refuses API errors. Its runner budget is 110 minutes; the merge-queue response
+budget must be at least 120 minutes. Job-specific entries are bound to the selected run and
 attempt; an old successful attempt cannot hide a failed rerun. Refusal tests
 exercise the actual evaluator, and governance tests check trigger wiring.
 

@@ -8,18 +8,18 @@ on:
 permissions:
   contents: read
   actions: read
-concurrency:
-  group: ci-gate-${{ github.ref }}
-  cancel-in-progress: true
+# A ruleset-enforced copy must not share cancellation with a PR-editable copy.
 jobs:
   gate:
     name: CI/gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 110
     steps:
       - name: Checkout gate implementation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: catachresis-colloquium/Cytoville
+          ref: 28781e1557c3d12cae37be26cd454321c35cbf1a
           persist-credentials: false
       - name: Verify refusal controls
         run: bash tests/workflows/ci_gate_test.sh

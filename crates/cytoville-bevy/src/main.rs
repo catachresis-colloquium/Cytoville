@@ -301,10 +301,13 @@ fn main() {
     app.add_systems(First, performance::frame);
     app.add_systems(Last, performance::exit_requested);
     app.run();
+    performance::finished();
     // The window may close while a save is pending; finish that one request
     // before allowing a normal process exit. No detached checkpoint writers.
-    let shutdown = local_work.finish();
-    performance::finished();
+    let shutdown = {
+        let _timing = performance::Span::new("local_shutdown_drain_ms");
+        local_work.finish()
+    };
     if let Some(path) = profile
         && let Err(error) = performance::write(&path)
     {
