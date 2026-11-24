@@ -6,8 +6,7 @@ on:
     types: [checks_requested]
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
+  pull_request: {}
   schedule:
     - cron: '0 6 1 * *'   # monthly 1st 06:00 UTC (Actions burn cut, standards#288)
 concurrency:

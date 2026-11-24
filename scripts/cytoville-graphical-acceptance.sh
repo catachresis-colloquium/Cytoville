@@ -2,12 +2,21 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Real X11 input against Bevy, with save/checkpoint assertions. Run in Xvfb.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "${CYTOVILLE_ACCEPTANCE_ROOT:-$(dirname "$0")/..}"
 : "${DISPLAY:?Run under xvfb-run with a 1440x960 screen}"
 unset WAYLAND_DISPLAY
 out="${CYTOVILLE_ACCEPTANCE_OUTPUT:?Set a directory for screenshots and receipt}"
 mkdir -p "$out"
 out="$(realpath "$out")"
+coverage_mode=${CYTOVILLE_ACCEPTANCE_COVERAGE:-0}
+[[ $coverage_mode == 0 || $coverage_mode == 1 ]] || exit 2
+smoke_seconds=600
+if [[ $coverage_mode == 1 ]]; then
+  : "${LLVM_PROFILE_FILE:?Coverage requires LLVM instrumentation}"
+  # The existing application timer exits through AppExit and flushes LLVM data.
+  # SIGTERM cleanup must never masquerade as a measured graphical journey.
+  smoke_seconds=90
+fi
 cargo build -p cytoville-bevy -p cytoville-runtime --locked
 target="$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)"
 scratch="$(mktemp -d)"
@@ -31,7 +40,7 @@ wait_for() {
   return 1
 }
 launch() {
-  "$target/debug/cytoville-bevy" --seed 7 --smoke-seconds 600 --settings "$scratch/preferences.json" "$@" > "$scratch/game.log" 2>&1 &
+  "$target/debug/cytoville-bevy" --seed 7 --smoke-seconds "$smoke_seconds" --settings "$scratch/preferences.json" "$@" > "$scratch/game.log" 2>&1 &
   game_pid=$!
   if ! wait_for 'Bevy window' xdotool search --pid "$game_pid" --name '^CYTOVILLE'; then
     # Startup stderr has no private ticket/checkpoint contents. Surface it so
@@ -43,7 +52,34 @@ launch() {
   xdotool windowfocus --sync "$window"
   sleep 2
 }
-stop_game() { kill "$game_pid"; wait "$game_pid" || true; game_pid=""; }
+stop_game() {
+  if [[ $coverage_mode == 1 ]]; then
+    # Bound the wait independently of the application's own timer.
+    for _ in $(seq 1 120); do
+      kill -0 "$game_pid" 2>/dev/null || break
+      sleep 1
+    done
+    if kill -0 "$game_pid" 2>/dev/null; then
+      echo 'FAIL: instrumented game did not exit normally' >&2
+      return 1
+    fi
+    wait "$game_pid" # A crash or nonzero exit fails acceptance.
+    local pattern=${LLVM_PROFILE_FILE//%p/$game_pid} profile found=0
+    [[ $LLVM_PROFILE_FILE == *%p* ]] || { echo 'FAIL: profile lacks process identity' >&2; return 1; }
+    # show-env uses nextest-style merge pools, e.g. %2m, as well as plain %m.
+    while [[ $pattern =~ %[0-9]*m ]]; do
+      pattern=${pattern//${BASH_REMATCH[0]}/*}
+    done
+    while IFS= read -r profile; do
+      if [[ -s $profile ]]; then found=1; fi
+    done < <(compgen -G "$pattern" || true)
+    [[ $found == 1 ]] || { echo 'FAIL: game exited without coverage profile' >&2; return 1; }
+    printf '%s\n' "PASS: game $game_pid exited normally and emitted LLVM coverage" >> "$out/profiles.txt"
+  else
+    kill "$game_pid"; wait "$game_pid" || true
+  fi
+  game_pid=""
+}
 click() { xdotool mousemove --sync --window "$window" "$1" "$2"; xdotool mousedown 1; sleep .2; xdotool mouseup 1; sleep .5; }
 key() { xdotool windowfocus --sync "$window"; xdotool key --clearmodifiers --delay 150 "$@"; sleep .5; }
 shot() {

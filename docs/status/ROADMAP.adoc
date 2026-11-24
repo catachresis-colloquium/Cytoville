@@ -6,6 +6,20 @@
 The authoritative engine, Bevy client, actual Zig rival, Enaction traces, Idris
 contract, Elixir two-player server and UMS package adapter form the native path.
 
+== Queue coverage repair, 2026-11-24
+
+PR #17 passed its required workflow checks but merge-group rule suite
+5344545411 rejected the built-in coverage rules because they require a pull
+request. The owner chose measured queue-compatible coverage with the existing
+80% floor and five-point maximum drop. The replacement collector, refusal
+tests and CI integration are under validation. The first hosted measurement
+correctly refused Rust at 3235/5056 lines (63.983%); Elixir passed at 167/202
+(82.673%). The extended graphical/TLS measurement is pending; no enforcement
+transition is claimed. See verification/COVERAGE.adoc.
+The merge queue and current protections remain unchanged. Single-player
+selection, checklist and responsiveness work remains ahead of a two-player
+alpha; hosting stays local.
+
 == Remaining release work
 
 * Establish a frame-time and input-latency baseline on the target machine in a
