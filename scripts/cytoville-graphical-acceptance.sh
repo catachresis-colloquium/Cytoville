@@ -234,6 +234,10 @@ key Escape
 shot 18-compact-selection
 key Next
 shot 19-compact-objectives
+# Changing a next-game choice must retain the selection screen's scroll offset.
+# The second scenario is visible here after Page Down in the 720p window.
+click 250 220
+shot 20-compact-scrolled-selection-change
 mv "$scratch/configured.json" "$scratch/configured-before-layout.json"
 key F5
 wait_for 'viewport navigation state saved from memory' test -s "$scratch/configured.json"

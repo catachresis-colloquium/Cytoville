@@ -42,8 +42,12 @@ struct Session {
     name_edit: Option<String>,
     inspect: bool,
 }
-#[derive(Component)]
-struct Screen;
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+enum Screen {
+    Selection,
+    Game,
+    Settings(settings::Tab),
+}
 #[derive(Component)]
 struct CellPulse;
 #[derive(Component)]
@@ -791,7 +795,7 @@ fn scroll_screen(
 fn render(
     mut commands: Commands,
     mut s: ResMut<Session>,
-    screens: Query<Entity, With<Screen>>,
+    screens: Query<(Entity, &Screen, &ScrollPosition)>,
     mut images: ResMut<Assets<Image>>,
     mut portraits: ResMut<portrait::Cache>,
     mut artwork: ResMut<city::Artwork>,
@@ -822,14 +826,26 @@ fn render(
     };
     let _timing = performance::Span::new("screen_rebuild_cpu_ms");
     s.dirty = false;
-    for entity in &screens {
+    let screen = if settings.open {
+        Screen::Settings(settings.tab)
+    } else if s.menu {
+        Screen::Selection
+    } else {
+        Screen::Game
+    };
+    let scroll = screens
+        .iter()
+        .find_map(|(_, previous, scroll)| (*previous == screen).then(|| scroll.clone()))
+        .unwrap_or_default();
+    for (entity, _, _) in &screens {
         commands.entity(entity).despawn();
     }
     if settings.open {
         commands
             .spawn((
-                Screen,
+                screen,
                 ScrollArea,
+                scroll,
                 Node {
                     width: Val::Percent(100.),
                     height: Val::Percent(100.),
@@ -865,7 +881,7 @@ fn render(
         )
     };
     let city_image = (!s.menu).then(|| artwork.get(c, &mut images));
-    commands.spawn((Screen,ScrollArea,Node{width:Val::Percent(100.0),height:Val::Percent(100.0),padding:UiRect::all(Val::Px(24.0)),overflow:Overflow::scroll_y(),..column()},BackgroundColor(ui_bg))).with_children(|root|{
+    commands.spawn((screen,ScrollArea,scroll,Node{width:Val::Percent(100.0),height:Val::Percent(100.0),padding:UiRect::all(Val::Px(24.0)),overflow:Overflow::scroll_y(),..column()},BackgroundColor(ui_bg))).with_children(|root|{
         root.spawn(Node{align_items:AlignItems::Center,justify_content:JustifyContent::SpaceBetween,..default()}).with_children(|head|{head.spawn(text("CYTOVILLE",32.0,ui_mint));head.spawn(text("ONE CELL. ONE LIFETIME. A WHOLE CITY.",15.0,ui_ink));head.spawn(button(Click::Settings,true)).with_child(text("Settings",15.0,ui_mint));if !s.menu{head.spawn(button(Click::Menu,true)).with_child(text("Menu",15.0,ui_ink));head.spawn(button(Click::Save,s.network.is_none())).with_child(text("Save · F5",15.0,ui_ink));}});
 
         if !s.message.is_empty(){root.spawn(text(s.message.clone(),15.0,Color::srgb(1.0,0.75,0.38)));}
@@ -1021,6 +1037,99 @@ fn capture(mut commands: Commands, mut c: ResMut<Capture>) {
 mod tests {
     use super::*;
     use std::sync::{Mutex, mpsc};
+
+    #[test]
+    fn controls_preserve_scroll_until_the_screen_or_settings_tab_changes() {
+        let runtime = Runtime::new(
+            Content::builtin(),
+            "euglena",
+            "fresh-daughter",
+            "standard",
+            7,
+            false,
+        )
+        .unwrap();
+        let before = serde_json::to_value(&runtime).unwrap();
+        let mut app = App::new();
+        app.insert_resource(Session {
+            runtime,
+            network: None,
+            local: local::Queue::default(),
+            menu: true,
+            dirty: true,
+            specimen: 0,
+            scenario: 0,
+            difficulty: 1,
+            seed: 7,
+            page: 0,
+            message: String::new(),
+            map_message: String::new(),
+            save: PathBuf::new(),
+            clock: FixedStep::from_hz(30.0),
+            visual_phase: 0.0,
+            smoke_until: None,
+            name_edit: None,
+            inspect: false,
+        })
+        .init_resource::<settings::Settings>()
+        .init_resource::<Assets<Image>>()
+        .init_resource::<portrait::Cache>()
+        .init_resource::<city::Artwork>()
+        .add_systems(Update, render)
+        .add_observer(interact);
+        app.update();
+        for (action, expected_screen, expected_y) in [
+            (Click::Scenario(1), Screen::Selection, 240.0),
+            (Click::Difficulty(2), Screen::Selection, 240.0),
+            (
+                Click::Settings,
+                Screen::Settings(settings::Tab::Performance),
+                0.0,
+            ),
+            (
+                Click::SettingsTab(settings::Tab::Accessibility),
+                Screen::Settings(settings::Tab::Accessibility),
+                0.0,
+            ),
+            (
+                Click::Preference(settings::Preference::Contrast),
+                Screen::Settings(settings::Tab::Accessibility),
+                240.0,
+            ),
+            (
+                Click::SettingsTab(settings::Tab::Video),
+                Screen::Settings(settings::Tab::Video),
+                0.0,
+            ),
+            (Click::Settings, Screen::Selection, 0.0),
+        ] {
+            let old_root = app
+                .world_mut()
+                .query_filtered::<Entity, With<Screen>>()
+                .single(app.world())
+                .unwrap();
+            app.world_mut()
+                .get_mut::<ScrollPosition>(old_root)
+                .unwrap()
+                .y = 240.0;
+            let control = app.world_mut().spawn((action, Enabled(true))).id();
+            app.world_mut().trigger(Activate { entity: control });
+            app.update();
+            let (new_root, screen, scroll) = app
+                .world_mut()
+                .query::<(Entity, &Screen, &ScrollPosition)>()
+                .single(app.world())
+                .unwrap();
+            assert_ne!(new_root, old_root, "exercise an actual screen rebuild");
+            assert!(*screen == expected_screen);
+            assert_eq!(scroll.y, expected_y);
+        }
+        assert_eq!(
+            serde_json::to_value(&app.world().resource::<Session>().runtime).unwrap(),
+            before,
+            "presentation and next-game choices must not mutate the current game"
+        );
+    }
 
     #[test]
     fn stalled_local_work_keeps_animation_running_and_blocks_state_replacement() {
