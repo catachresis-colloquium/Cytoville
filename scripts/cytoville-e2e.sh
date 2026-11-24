@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "${CYTOVILLE_ACCEPTANCE_ROOT:-$(dirname "$0")/..}"
 cargo build -p cytoville-runtime -p cytoville-ums --locked
 target="$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)"
 scratch="$(mktemp -d)"
