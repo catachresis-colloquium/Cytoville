@@ -961,7 +961,7 @@ fn render(
                     preview.spawn(text(organelles,14.0,ui_ink));
                 });
             });
-            root.spawn(text("Travel spends ATP. Eat every cycle. Rest to control stress. End a cycle with Space. Progress autosaves after every accepted command.",16.0,ui_ink));
+            root.spawn(text("Click a district on the map, then choose an action in its panel. Spend ATP to travel and act; earn biomass through work. Feed and rest before ending a cycle (Space), when your rival takes its turn. Accepted actions autosave; Continue (F9) restores your game.",16.0,ui_ink));
             root.spawn((Node{padding:UiRect::all(Val::Px(16.0)),flex_shrink:0.0,..column()},BackgroundColor(ui_panel))).with_children(|brief|{
                 let scenario=&c.scenarios[&c.scenario_order[s.scenario]];
                 brief.spawn(text(format!("YOUR GOAL · {}",scenario.name),18.0,ui_mint));

@@ -6,19 +6,30 @@
 The authoritative engine, Bevy client, actual Zig rival, Enaction traces, Idris
 contract, Elixir two-player server and UMS package adapter form the native path.
 
-== Queue coverage repair, 2026-11-24
+== Protected merges and desktop delivery, 2026-11-25
 
-PR #17 passed its required workflow checks but merge-group rule suite
-5344545411 rejected the built-in coverage rules because they require a pull
-request. The owner chose measured queue-compatible coverage with the existing
-80% floor and five-point maximum drop. The replacement collector, refusal
-tests and CI integration are under validation. The first hosted measurement
-correctly refused Rust at 3235/5056 lines (63.983%); Elixir passed at 167/202
-(82.673%). The extended graphical/TLS measurement is pending; no enforcement
-transition is claimed. See verification/COVERAGE.adoc.
-The merge queue and current protections remain unchanged. Single-player
-selection, checklist and responsiveness work remains ahead of a two-player
-alpha; hosting stays local.
+PR #17 merged through the protected queue at
+`e6a2c4d78fe6f39a4c50d262910a181fccbfc221`. Queue-compatible measured coverage
+now enforces the existing 80% floor and five-point maximum drop. The queue and
+pinned required workflow remain enforced; no bypass was used.
+See verification/COVERAGE.adoc for the measurement and refusal contract.
+
+PR #21 merged at `e00d1f5c7c35c6b253c64053c6c4745d3232d2dd` after native,
+graphical/local TLS, measured coverage and production proof checks passed.
+Its selection previews, reachable checklist, nested scrolling and preserved
+viewport positions are landed. The Windows release artifact in
+https://github.com/catachresis-colloquium/Cytoville/actions/runs/45575353199[run 45575353199]
+contains those game sources. Its source/file receipt was verified and the
+local executable updated with a backup. A native desktop playthrough and
+new speed measurements remain pending resource admission. Hosted acceptance
+does not close that desktop milestone. Hosting remains local.
+
+PR #25 merged through the protected queue at
+`430d0a9105e8889ca488a3d7b0a386e0ff256679`. Manual Windows builds now retain a
+source/hash receipt and run independently of ordinary push cancellation.
+Native acceptance, measured coverage, estate controls and scoped production
+proofs passed for that merge. This is build-delivery evidence, not a desktop
+performance or full-playthrough result.
 
 == Remaining release work
 
@@ -49,14 +60,12 @@ delay a playable core or be advertised as working integrations prematurely.
 
 === Open work
 
-The 2026-11-24 MVP follow-up drafts a selected-specimen portrait and scenario
-objectives on the landing screen, bounded portrait caching, a non-shrinking
-checklist and scrollable short-window content with Page Up / Page Down.
-Unchanged pulse transforms are no longer written in reduced-motion mode.
-The graphical journey now requests 1280x720 screenshots and checks that viewport
-navigation preserves the saved runtime. These changes require compilation,
-visual inspection and current-head acceptance before being called complete.
-No measured desktop speedup or full-scenario completion is asserted.
+PR #21's graphical journey retains 1280x720 evidence, verifies a real scenario
+change while the viewport stays fixed, and checks navigation against the saved
+runtime. Its native and graphical checks passed before merge. Native Windows
+input-to-display latency, complete scenario play and save/restart/resume still
+need acceptance on the updated executable. No measured desktop speedup or
+full-scenario completion is asserted.
 
 * Establish a frame-time and input-latency baseline on the target machine in a
   release build; profile rendering, UI rebuilds, native turns and networking.
