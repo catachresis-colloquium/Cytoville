@@ -1088,6 +1088,9 @@ mod tests {
         app.init_resource::<MouseScrollPixelsPerLine>()
             .add_plugins(bevy::ui_widgets::ScrollAreaPlugin)
             .add_observer(scroll_panel);
+        // PointerTraversal queries Option<&Window>. Even an optional component
+        // must be registered for EntityRef::get_components to construct its state.
+        app.world_mut().register_component::<Window>();
         let root = app
             .world_mut()
             .spawn((
@@ -1109,6 +1112,13 @@ mod tests {
         // Observer registration is deferred. Production runs schedules before
         // input arrives; this minimal fixture must flush registration explicitly.
         app.world_mut().flush();
+        assert!(
+            app.world()
+                .entity(child)
+                .get_components::<bevy::picking::events::PointerTraversal>()
+                .is_ok(),
+            "fixture must support the production pointer traversal"
+        );
         // Content height, starting panel offset, wheel units/distance, final offsets.
         for (height, start, unit, delta, panel_y, root_y) in [
             (100.0, 0.0, MouseScrollUnit::Pixel, -60.0, 0.0, 560.0),
