@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+use bevy::input::mouse::{MouseScrollPixelsPerLine, MouseScrollUnit};
 use bevy::picking::Pickable;
+use bevy::picking::events::PointerScroll;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui::Pressed;
@@ -48,6 +50,9 @@ enum Screen {
     Game,
     Settings(settings::Tab),
 }
+#[derive(Component)]
+#[require(ScrollPosition)]
+struct PanelScroll;
 #[derive(Component)]
 struct CellPulse;
 #[derive(Component)]
@@ -274,6 +279,7 @@ fn main() {
             frames: 0,
         })
         .add_observer(interact)
+        .add_observer(scroll_panel)
         .add_systems(
             Update,
             (
@@ -768,13 +774,39 @@ fn network_updates(mut s: ResMut<Session>) {
         }
     }
 }
+fn scroll_panel(
+    mut event: On<PointerScroll>,
+    conversion: Res<MouseScrollPixelsPerLine>,
+    mut panels: Query<(&ComputedNode, &mut ScrollPosition), With<PanelScroll>>,
+) {
+    let Ok((node, mut scroll)) = panels.get_mut(event.entity) else {
+        return;
+    };
+    if node.is_empty() {
+        return;
+    }
+    let pixels = event.to_pixels(&conversion);
+    let max = ((node.content_size().y - node.size().y) * node.inverse_scale_factor).max(0.0);
+    let old = scroll.y.clamp(0.0, max);
+    let next = (old - pixels.y).clamp(0.0, max);
+    scroll.y = next;
+    // Bubble only the unconsumed distance to the outer page. A panel at its
+    // boundary (or without overflow) must not trap wheel/trackpad input.
+    event.unit = MouseScrollUnit::Pixel;
+    event.x = pixels.x;
+    event.y = pixels.y - (old - next);
+    let remaining = event.x != 0.0 || event.y != 0.0;
+    event.propagate(remaining);
+}
 fn scroll_screen(
     keys: Res<ButtonInput<KeyCode>>,
     s: Res<Session>,
     settings: Res<settings::Settings>,
     mut roots: Query<(&ComputedNode, &mut ScrollPosition), With<Screen>>,
 ) {
-    if s.name_edit.is_some() || settings.edit_ai_name.is_some() {
+    if (settings.open && settings.tab == settings::Tab::Players && settings.edit_ai_name.is_some())
+        || (!settings.open && !s.menu && s.name_edit.is_some())
+    {
         return;
     }
     for (node, mut scroll) in &mut roots {
@@ -950,7 +982,7 @@ fn render(
                 // of the bottom-row districts, including in a 720p window.
                 map.spawn((Pickable::IGNORE,Node{position_type:PositionType::Absolute,left:Val::Px(12.0),right:Val::Px(12.0),bottom:Val::Px(8.0),..default()})).with_child((Pickable::IGNORE,text(if s.map_message.is_empty(){"Click a district picture or name; choose an action on the right."}else{&s.map_message},13.0,ui_mint)));
             });
-            body.spawn((ScrollArea,Node{width:Val::Percent(44.0),min_height:Val::Px(0.0),overflow:Overflow::scroll_y(),padding:UiRect::all(Val::Px(14.0)),..column()},BackgroundColor(ui_panel))).with_children(|panel|{
+            body.spawn((PanelScroll,Node{width:Val::Percent(44.0),min_height:Val::Px(0.0),overflow:Overflow::scroll_y(),padding:UiRect::all(Val::Px(14.0)),..column()},BackgroundColor(ui_panel))).with_children(|panel|{
                 if s.inspect{panel.spawn(text("EXPRESSED ORGANELLES",22.0,ui_mint));let page=s.page.min(a.organelles.len().div_ceil(4).saturating_sub(1));for id in a.organelles.iter().skip(page*4).take(4){let o=&c.organelles[id];panel.spawn(text(o.name.clone(),18.0,ui_mint));panel.spawn(text(format!("{} {}",o.effect,o.science),14.0,ui_ink));}panel.spawn(button(Click::Page((page+1)%a.organelles.len().div_ceil(4).max(1)),true)).with_child(text("Next organelles",15.0,ui_ink));panel.spawn(button(Click::Inspect,true)).with_child(text("Back to district",15.0,ui_ink));
                 }else if let Some(event)=g.pending_event.as_ref().and_then(|id|c.events.iter().find(|e|e.id==*id)){
                     panel.spawn(text(event.title.clone(),22.0,ui_mint));panel.spawn(text(event.extra.get("prompt").and_then(|v|v.as_str()).unwrap_or("Encounter"),16.0,ui_ink));for choice in &event.choices{let lock=turn::choice_lock(a,choice);panel.spawn(button(Click::Game(GameCommand::Choose{id:choice.id.clone()}),lock.is_none())).with_child(text(format!("{}{}",choice.label,lock.map(|l|format!(" · {l}")).unwrap_or_default()),15.0,ui_ink));}
@@ -1044,6 +1076,79 @@ mod tests {
     use std::sync::{Mutex, mpsc};
 
     #[test]
+    fn nested_panel_passes_only_unused_wheel_distance_to_the_page() {
+        use bevy::camera::NormalizedRenderTarget;
+        use bevy::input::touch::TouchPhase;
+        use bevy::picking::{
+            backend::HitData,
+            events::Pointer,
+            pointer::{Location, PointerId},
+        };
+        let mut app = App::new();
+        app.init_resource::<MouseScrollPixelsPerLine>()
+            .add_plugins(bevy::ui_widgets::ScrollAreaPlugin)
+            .add_observer(scroll_panel);
+        let root = app
+            .world_mut()
+            .spawn((
+                ScrollArea,
+                Node {
+                    overflow: Overflow::scroll_y(),
+                    ..default()
+                },
+                ComputedNode {
+                    size: Vec2::splat(100.0),
+                    content_size: Vec2::new(100.0, 1100.0),
+                    inverse_scale_factor: 1.0,
+                    ..default()
+                },
+            ))
+            .id();
+        let panel = app.world_mut().spawn((PanelScroll, ChildOf(root))).id();
+        // Content height, starting panel offset, wheel units/distance, final offsets.
+        for (height, start, unit, delta, panel_y, root_y) in [
+            (100.0, 0.0, MouseScrollUnit::Pixel, -60.0, 0.0, 560.0),
+            (200.0, 100.0, MouseScrollUnit::Pixel, -60.0, 100.0, 560.0),
+            (200.0, 0.0, MouseScrollUnit::Pixel, 60.0, 0.0, 440.0),
+            (200.0, 80.0, MouseScrollUnit::Pixel, -60.0, 100.0, 540.0),
+            (200.0, 20.0, MouseScrollUnit::Pixel, 60.0, 0.0, 460.0),
+            (200.0, 20.0, MouseScrollUnit::Pixel, -60.0, 80.0, 500.0),
+            (200.0, 80.0, MouseScrollUnit::Line, -1.0, 100.0, 580.0),
+        ] {
+            app.world_mut().get_mut::<ScrollPosition>(root).unwrap().y = 500.0;
+            app.world_mut().entity_mut(panel).insert((
+                ComputedNode {
+                    size: Vec2::splat(100.0),
+                    content_size: Vec2::new(100.0, height),
+                    inverse_scale_factor: 1.0,
+                    ..default()
+                },
+                ScrollPosition(Vec2::new(0.0, start)),
+            ));
+            app.world_mut().trigger(PointerScroll {
+                entity: panel,
+                pointer: Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: NormalizedRenderTarget::None {
+                            width: 100,
+                            height: 100,
+                        },
+                        position: Vec2::ZERO,
+                    },
+                ),
+                unit,
+                x: 0.0,
+                y: delta,
+                hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+                phase: TouchPhase::Moved,
+            });
+            assert_eq!(app.world().get::<ScrollPosition>(panel).unwrap().y, panel_y);
+            assert_eq!(app.world().get::<ScrollPosition>(root).unwrap().y, root_y);
+        }
+    }
+
+    #[test]
     fn controls_preserve_scroll_until_the_screen_or_settings_tab_changes() {
         let runtime = Runtime::new(
             Content::builtin(),
@@ -1135,6 +1240,47 @@ mod tests {
             before,
             "presentation and next-game choices must not mutate the current game"
         );
+        let root = app
+            .world_mut()
+            .query_filtered::<Entity, With<Screen>>()
+            .single(app.world())
+            .unwrap();
+        app.world_mut().entity_mut(root).insert(ComputedNode {
+            size: Vec2::splat(100.0),
+            content_size: Vec2::new(100.0, 1100.0),
+            inverse_scale_factor: 1.0,
+            ..default()
+        });
+        // Hidden editors must not consume page navigation; visible ones retain it.
+        for (open, menu, tab, rename, ai_name, expected) in [
+            (true, false, settings::Tab::Video, true, false, 80.0),
+            (false, false, settings::Tab::Players, false, true, 80.0),
+            (true, false, settings::Tab::Video, false, true, 80.0),
+            (false, true, settings::Tab::Video, true, false, 80.0),
+            (false, false, settings::Tab::Video, true, false, 0.0),
+            (true, false, settings::Tab::Players, false, true, 0.0),
+        ] {
+            {
+                let mut session = app.world_mut().resource_mut::<Session>();
+                session.menu = menu;
+                session.name_edit = rename.then(String::new);
+            }
+            {
+                let mut settings = app.world_mut().resource_mut::<settings::Settings>();
+                settings.open = open;
+                settings.tab = tab;
+                settings.edit_ai_name = ai_name.then(String::new);
+            }
+            app.world_mut().get_mut::<ScrollPosition>(root).unwrap().y = 0.0;
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .press(KeyCode::PageDown);
+            app.update();
+            assert_eq!(app.world().get::<ScrollPosition>(root).unwrap().y, expected);
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .reset_all();
+        }
     }
 
     #[test]

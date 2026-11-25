@@ -245,6 +245,11 @@ image_tool=convert
 strip_before=$("$image_tool" "$out/19-compact-objectives.png" -crop 700x120+20+0 +repage -format '%#' info:)
 strip_after=$("$image_tool" "$out/20-compact-scrolled-selection-change.png" -crop 700x120+20+0 +repage -format '%#' info:)
 [[ -n "$strip_before" && "$strip_before" == "$strip_after" ]] || { echo 'FAIL: scenario change moved the scrolled selection viewport'; exit 1; }
+# A missed click also leaves the viewport unchanged. Require the selection
+# markers to change, excluding the pointer and the hovered button's border.
+marker_before=$("$image_tool" "$out/19-compact-objectives.png" -crop 20x100+32+160 +repage -format '%#' info:)
+marker_after=$("$image_tool" "$out/20-compact-scrolled-selection-change.png" -crop 20x100+32+160 +repage -format '%#' info:)
+[[ -n "$marker_before" && -n "$marker_after" && "$marker_before" != "$marker_after" ]] || { echo 'FAIL: scenario selection marker did not change'; exit 1; }
 mv "$scratch/configured.json" "$scratch/configured-before-layout.json"
 key F5
 wait_for 'viewport navigation state saved from memory' test -s "$scratch/configured.json"
