@@ -206,6 +206,21 @@ console.log("PASS: current draft canon identity and original mint provenance are
 // A skipped or failed reusable acceptance job must never turn the established
 // required Rust check green. Exercise its actual shell verdict for every result.
 const rust = readYaml("rust-ci.yml");
+// A push must not cancel a manually requested desktop artifact build.
+const rustGroup = (event, ref) => {
+  const values = { workflow: rust.name, event_name: event, ref };
+  const group = rust.concurrency.group.replace(
+    /\$\{\{ github\.(workflow|event_name|ref) \}\}/g, (_, key) => values[key]);
+  assert.ok(!group.includes("${{"), "unsupported Rust concurrency expression");
+  return group;
+};
+for (const branch of ["main", "master"]) {
+  assert.notEqual(rustGroup("workflow_dispatch", `refs/heads/${branch}`),
+    rustGroup("push", `refs/heads/${branch}`));
+}
+assert.notEqual(rustGroup("pull_request", "refs/pull/1/merge"),
+  rustGroup("pull_request", "refs/pull/2/merge"));
+assert.equal(rust.concurrency["cancel-in-progress"], true);
 // CI/gate must run on PRs and synthetic merge-queue commits, with producers
 // that cannot disappear behind path filters. Advisory reporters stay advisory.
 const required = read("ci/required-workflows.txt").split(/\r?\n/)
