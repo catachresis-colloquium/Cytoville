@@ -4,10 +4,8 @@
 # PR #244 configuration regressions: the retired runtime policy must not ship,
 # and governance must run for pull requests targeting any branch with a locked
 # checkout of metadatastician/standards at a full 40-hex SHA.
-# PR #257 adds the proof-policy mapping and adopts canon 2.1.3, and canon 2.1.4 (an editorial PATCH:
-# the criteria and gates hashes are unchanged) is adopted here. Since that
-# change is documentation and configuration only, check its published contract
-# here without invoking any proof compiler or making network requests.
+# Includes the proof-policy mapping and the current draft canon 2.1.5 identity.
+# These are configuration checks, not proof compiler runs or release evidence.
 # Usage: bash tests/workflows/governance_policy_test.sh
 # Requires Bun; reads local policy documents, YAML and deed fields only.
 
@@ -18,7 +16,7 @@ command -v bun >/dev/null 2>&1 || { echo 'FAIL: Bun is required' >&2; exit 1; }
 
 bun run - "$REPO_DIR" <<'JS'
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -128,6 +126,10 @@ for (const [label, arrivalLabel, verifier] of [
     assert.equal(matches.length, 1, `${name} must map ${key} exactly once`);
     assert.match(matches[0][1], new RegExp(`^${verifier}\\b`),
       `${name} must assign ${key} to ${verifier}`);
+    if (key === "Rust code") {
+      assert.match(matches[0][1], /\bPearlite\b/, `${name} must name Creusot's contract language`);
+      assert.match(matches[0][1], /\bVerus\b/, `${name} must retain the complementary Rust verifier`);
+    }
     if (key === "Theory") {
       assert.match(matches[0][1], /Agda, rechecked in Rocq and Lean/);
     }
@@ -146,7 +148,7 @@ console.log("PASS: proof locations preserve mandatory ABI proofs and both theory
 const obligations = prose(mapping);
 assert.match(obligations, /types, functions or wire formats are engineering \(Idris2\)/);
 assert.match(obligations, /any implementation are theory \(Agda\)/);
-assert.match(obligations, /first-party Rust or Ada code.*Creusot or SPARK on that code, not restated in Idris2/);
+assert.match(obligations, /first-party Rust or Ada code.*Creusot\/Pearlite and Verus, or SPARK for Ada, on that code, not restated in Idris2/);
 assert.match(obligations, /recorded beside the artefact and in docs\/status\/PROOF-STATUS\.adoc/);
 assert.match(obligations, /tlaplus\/.*finite model check is reported as TESTED, with its bounds/);
 assert.match(obligations, /Kani \(unsafe and FFI seams, reported TESTED with bounds\)/);
@@ -186,15 +188,171 @@ for (const path of ["docs/status/PROOF-NEEDS.adoc", "docs/status/PROOF-STATUS.ad
 }
 console.log("PASS: new proof instructions require needs, verification, rechecks and assumptions");
 
-// Keep the independently specified release tuple together: a version-only
+// Keep the independently specified canon tuple together: a version-only
 // bump or retaining the previous gates hash would misidentify the canon.
-// Update this expectation deliberately when adopting the next canon release.
+// The current upstream identity is draft; this is not a publication claim.
 const field = (key) => execFileSync("bash", [resolve(root, "scripts/deed-field.sh"),
   resolve(root, "cytoville_chora.deed"), "canon", key], { encoding: "utf8" }).trim();
 assert.deepEqual([field("version"), field("criteria-sha256"), field("gates-sha256")], [
-  "2.1.4",
+  "2.1.5",
   "6a5aa8857bd0d0d58ef48827938ca17c251b6b854dacf59d306388d61694d82a",
-  "2f31f46d4753432e0aa8c9c28f339e18e062c98dc6e6ef4ecbb76993cf37638b",
-], "canon 2.1.4 keeps the criteria and gates identities of 2.1.3 (an editorial PATCH)");
-console.log("PASS: the deed adopts the complete canon 2.1.4 identity");
+  "5c510bba025be718deebb12d0333bfe7db2da43c66578b728b1a334df65290b1",
+], "canon 2.1.5 retains the criteria and adopts corrected gate-table identity");
+assert.equal(execFileSync("bash", [resolve(root, "scripts/deed-field.sh"),
+  resolve(root, "cytoville_chora.deed"), "provenance", "canon-version"],
+  { encoding: "utf8" }).trim(), "2.1.4", "mint provenance must not follow adoption");
+console.log("PASS: current draft canon identity and original mint provenance are distinct");
+
+// A skipped or failed reusable acceptance job must never turn the established
+// required Rust check green. Exercise its actual shell verdict for every result.
+const rust = readYaml("rust-ci.yml");
+// A push must not cancel a manually requested desktop artifact build.
+const rustGroup = (event, ref) => {
+  const values = { workflow: rust.name, event_name: event, ref };
+  const group = rust.concurrency.group.replace(
+    /\$\{\{ github\.(workflow|event_name|ref) \}\}/g, (_, key) => values[key]);
+  assert.ok(!group.includes("${{"), "unsupported Rust concurrency expression");
+  return group;
+};
+for (const branch of ["main", "master"]) {
+  assert.notEqual(rustGroup("workflow_dispatch", `refs/heads/${branch}`),
+    rustGroup("push", `refs/heads/${branch}`));
+}
+assert.notEqual(rustGroup("pull_request", "refs/pull/1/merge"),
+  rustGroup("pull_request", "refs/pull/2/merge"));
+assert.equal(rust.concurrency["cancel-in-progress"], true);
+// CI/gate must run on PRs and synthetic merge-queue commits, with producers
+// that cannot disappear behind path filters. Advisory reporters stay advisory.
+const required = read("ci/required-workflows.txt").split(/\r?\n/)
+  .filter((line) => line && !line.startsWith("#"));
+assert.equal(new Set(required).size, required.length);
+const validateProducer = (doc, jobName) => {
+  assert.ok(Object.hasOwn(doc.on, "pull_request"));
+  const pr = doc.on.pull_request ?? {};
+  for (const filter of ["paths", "paths-ignore", "branches-ignore", "types"]) {
+    assert.equal(pr[filter], undefined, `required producer cannot use ${filter}`);
+  }
+  if (pr.branches) {
+    assert.ok(pr.branches.includes("main") || pr.branches.includes("**"));
+    assert.ok(pr.branches.every((branch) => !branch.startsWith("!")));
+  }
+  assert.deepEqual(doc.on.merge_group, { types: ["checks_requested"] });
+  if (jobName) {
+    const jobs = Object.values(doc.jobs).filter((job) => job.name === jobName);
+    assert.equal(jobs.length, 1, `missing or ambiguous required job: ${jobName}`);
+    assert.equal(jobs[0].if, undefined, "required conformance job cannot be skipped");
+    assert.equal(jobs[0].strategy, undefined, "job selector must identify one concrete job");
+  }
+};
+for (const entry of required) {
+  const [path, name] = entry.split("|");
+  validateProducer(Bun.YAML.parse(read(path)), name);
+}
+const aggregate = readYaml("ci.yml");
+validateProducer(aggregate);
+assert.equal(aggregate.jobs.gate.name, "CI/gate");
+assert.deepEqual(aggregate.permissions, { contents: "read", actions: "read" });
+const trustedCheckout = aggregate.jobs.gate.steps.find((s) =>
+  String(s.uses ?? "").startsWith("actions/checkout@"));
+assert.equal(trustedCheckout.with.repository, "catachresis-colloquium/Cytoville");
+assert.match(trustedCheckout.with.ref, /^[0-9a-f]{40}$/,
+  "gate implementation and manifest must come from an immutable trusted revision");
+assert.equal(trustedCheckout.with["persist-credentials"], false);
+assert.equal(aggregate.concurrency, undefined,
+  "PR-editable concurrency must not cancel the ruleset-enforced copy");
+assert.ok(aggregate.jobs.gate.steps.some((s) => s.run === "bash tests/workflows/ci_gate_test.sh"));
+const collect = aggregate.jobs.gate.steps.find((s) => s.run === "bash scripts/check-ci-gate.sh");
+assert.ok(collect);
+assert.equal(collect.env.TARGET_SHA, "${{ github.event.pull_request.head.sha || github.sha }}");
+assert.equal(collect.env.RUN_EVENT, "${{ github.event_name }}");
+for (const mutate of [
+  (d) => { delete d.on.merge_group; },
+  (d) => { d.on.pull_request.paths = ["src/**"]; },
+  (d) => { d.on.merge_group.types = ["destroyed"]; },
+]) {
+  const broken = structuredClone(aggregate);
+  mutate(broken);
+  assert.throws(() => validateProducer(broken));
+}
+const fork = readYaml("fork-governance.yml");
+assert.equal(fork.jobs.deed.steps.find((s) => s.env?.BASE_REF).env.BASE_REF,
+  "${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha || github.base_ref }}");
+console.log("PASS: required producers and CI/gate run for PR and merge queue; missing and filtered wiring refused");
+const e2e = readYaml("e2e.yml");
+// The collector must outlive the sequential native-platform jobs, and its
+// runner must leave time for the collector's explicit failure at the deadline.
+const deadline = Number(read("scripts/check-ci-gate.sh")
+  .match(/deadline=\$\(\(SECONDS \+ (\d+)\)\)/)?.[1]);
+// The collector observes PR/merge_group producers, not manual release builds.
+// Accept only a positive literal or this deliberately narrow manual override;
+// an unknown expression must fail rather than silently shortening the budget.
+const requiredEventMinutes = (value) => {
+  if (Number.isSafeInteger(value) && value > 0) return value;
+  const match = typeof value === "string" && value.match(
+    /^\$\{\{ github\.event_name == 'workflow_dispatch' && ([1-9]\d*) \|\| ([1-9]\d*) \}\}$/);
+  assert.ok(match, "unsupported timeout expression for required producer");
+  assert.ok(match.slice(1).every((n) => Number.isSafeInteger(Number(n))),
+    "timeout must be a safe positive integer");
+  return Number(match[2]);
+};
+assert.equal(requiredEventMinutes(25), 25);
+assert.equal(requiredEventMinutes("${{ github.event_name == 'workflow_dispatch' && 75 || 30 }}"), 30);
+for (const invalid of [undefined, 0, -1, 1.5, "20", "${{ inputs.timeout }}",
+  "${{ github.event_name == 'pull_request' && 60 || 20 }}",
+  "${{ github.event_name == 'workflow_dispatch' && 60 || 0 }}",
+  "${{ github.event_name == 'workflow_dispatch' && 60 || 9007199254740992 }}"]) {
+  assert.throws(() => requiredEventMinutes(invalid));
+}
+const nativeMinutes = requiredEventMinutes(rust.jobs["windows-native"]["timeout-minutes"]) +
+  requiredEventMinutes(e2e.jobs.acceptance["timeout-minutes"]) +
+  requiredEventMinutes(rust.jobs["rust-ci"]["timeout-minutes"]);
+assert.ok(Number.isFinite(deadline) && deadline >= (nativeMinutes + 15) * 60,
+  "collector must allow sequential native jobs plus scheduling headroom");
+assert.ok(aggregate.jobs.gate["timeout-minutes"] * 60 >= deadline + 300,
+  "aggregate runner must outlive the collector by at least five minutes");
+console.log("PASS: aggregate budgets cover sequential native acceptance");
+
+// Synthetic merge refs support analysis but not a code-scanning upload.
+// Keep analysis and zero-critical enforcement unconditional.
+const analysis = readYaml("codeql.yml").jobs.analyze.steps
+  .find((s) => String(s.uses ?? "").startsWith("github/codeql-action/analyze@"));
+assert.ok(analysis);
+assert.equal(analysis.if, undefined);
+assert.equal(analysis.with.upload, "${{ (github.event_name != 'merge_group' && 'always') || 'never' }}");
+const hypatia = readYaml("hypatia-scan.yml").jobs.hypatia.steps;
+const sarif = hypatia.find((s) => String(s.uses ?? "").startsWith("github/codeql-action/upload-sarif@"));
+assert.equal(sarif.if, "github.event_name != 'merge_group' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)");
+const critical = hypatia.find((s) => s.name === "Enforce zero critical Hypatia findings");
+assert.ok(critical);
+assert.equal(critical.if, undefined);
+assert.equal(critical["continue-on-error"], undefined);
+console.log("PASS: merge queue keeps security analysis and gates without unsupported SARIF uploads");
+assert.equal(rust.jobs.acceptance.uses, "./.github/workflows/e2e.yml");
+assert.equal(rust.jobs.acceptance.needs, undefined, "Linux acceptance must run independently of Windows");
+const gate = rust.jobs["rust-ci"];
+assert.deepEqual(gate.needs, ["windows-native", "acceptance"]);
+assert.equal(gate.if, "${{ always() }}");
+assert.equal(gate.steps.length, 1);
+assert.deepEqual(gate.steps[0].env, {
+  WINDOWS_RESULT: "${{ needs.windows-native.result }}",
+  ACCEPTANCE_RESULT: "${{ needs.acceptance.result }}",
+});
+for (const windows of ["success", "failure", "cancelled", "skipped"]) {
+  for (const acceptance of ["success", "failure", "cancelled", "skipped"]) {
+    const result = spawnSync("bash", ["-c", gate.steps[0].run], {
+      env: { ...process.env, WINDOWS_RESULT: windows, ACCEPTANCE_RESULT: acceptance },
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status === 0, windows === "success" && acceptance === "success");
+  }
+}
+assert.ok(Object.hasOwn(e2e.on, "workflow_call"));
+const acceptanceSteps = e2e.jobs.acceptance.steps;
+for (const script of ["scripts/cytoville-check.sh", "scripts/cytoville-graphical-acceptance.sh"]) {
+  const step = acceptanceSteps.find((s) => (s.run ?? "").includes(script));
+  assert.ok(step, `${script} must execute in the reusable acceptance job`);
+  assert.equal(step["continue-on-error"], undefined);
+}
+assert.equal(e2e.jobs.acceptance["continue-on-error"], undefined);
+console.log("PASS: both native platforms and complete acceptance are required; skipped work refuses green");
 JS

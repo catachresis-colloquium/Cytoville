@@ -5,13 +5,15 @@
 name: Rust CI
 
 on:
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -21,7 +23,7 @@ jobs:
   windows-native:
     name: Windows Rust and Zig runtime boundary
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 60 || 20 }}
     permissions:
       contents: read
     steps:
@@ -39,66 +41,58 @@ jobs:
         shell: pwsh
         run: cargo test -p cytoville-runtime --release --test runtime --locked
 
-  rust-ci:
-    name: Rust standalone tools and workspace gate
-    needs: windows-native
-    if: ${{ always() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    steps:
-      - name: Require Windows native boundary acceptance
-        env:
-          WINDOWS_RESULT: ${{ needs.windows-native.result }}
-        run: test "$WINDOWS_RESULT" = success
-
-      - name: Checkout repository
-        uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-          submodules: recursive
-
-      - name: Install pinned game native tools
-        run: bash scripts/install-ci-native.sh
-
-      - name: Install BEAM for authoritative multiplayer tests
-        uses: erlef/setup-beam@v1.24.1
-        with:
-          otp-version: "28.3.1"
-          elixir-version: "1.19.4"
-
-      - name: Install Rust
-        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy && rustup default 1.99.1
-
-      - name: Compile standalone Rust helpers and run tests
+      - name: Build the Windows client for local acceptance
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
         run: |
-          set -euo pipefail
-          rustc --version
-          mkdir -p "$RUNNER_TEMP/rust-bins"
-          for src in scripts/*.rs; do
-            [ -f "$src" ] || continue
-            bin_name="$(basename "$src" .rs)"
-            echo "Compiling $src (-D warnings)..."
-            rustc --edition 2021 -D warnings "$src" -o "$RUNNER_TEMP/rust-bins/$bin_name"
-          done
-          if [ -f tests/workflows/archetype_lock_merge_test.sh ]; then
-            bash tests/workflows/archetype_lock_merge_test.sh
-          fi
-          if [ -f Cargo.toml ]; then
-            bash scripts/cytoville-check.sh
-          fi
+          $ErrorActionPreference = 'Stop'
+          cargo build -p cytoville-bevy --release --locked --jobs 2
+          if ($LASTEXITCODE -ne 0) { throw 'Windows client build failed.' }
+          $package = Join-Path $env:RUNNER_TEMP 'cytoville-windows'
+          New-Item -ItemType Directory -Path $package | Out-Null
+          Copy-Item -LiteralPath 'target/release/cytoville-bevy.exe' -Destination $package
+          Copy-Item -LiteralPath 'LICENSE' -Destination (Join-Path $package 'COPYING')
+          Copy-Item -LiteralPath 'assets/fonts/LICENCE.txt' -Destination (Join-Path $package 'FONT-LICENCE.txt')
+          $revision = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $revision -ne $env:GITHUB_SHA) { throw 'Source revision mismatch.' }
+          $files = @('COPYING', 'FONT-LICENCE.txt', 'cytoville-bevy.exe') | ForEach-Object {
+            [ordered]@{ name = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $package $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          # Fixed ASCII string schema: lexical keys, compact UTF-8, no BOM/newline.
+          # This receipt is JCS; it is not a general-purpose JSON canonicalizer.
+          $receipt = [ordered]@{
+            cargo_lock_sha256 = (Get-FileHash -LiteralPath 'Cargo.lock' -Algorithm SHA256).Hash.ToLowerInvariant()
+            files = @($files)
+            profile = 'release'
+            run_attempt = $env:GITHUB_RUN_ATTEMPT
+            run_id = $env:GITHUB_RUN_ID
+            scope = 'Build artifact for local acceptance; graphical playthrough and desktop latency remain unverified.'
+            source_revision = $revision
+            target = 'x86_64-pc-windows-msvc'
+          } | ConvertTo-Json -Depth 4 -Compress
+          [IO.File]::WriteAllText((Join-Path $package 'build-receipt.json'), $receipt, [Text.UTF8Encoding]::new($false))
 
-      - name: Graphical acceptance with local encrypted multiplayer
-        env:
-          CYTOVILLE_ACCEPTANCE_OUTPUT: ${{ runner.temp }}/cytoville-graphical-acceptance
-        run: xvfb-run -a -s "-screen 0 1440x960x24 -nolisten tcp" bash scripts/cytoville-graphical-acceptance.sh
-
-      - name: Retain graphical acceptance screenshots and receipt
-        if: always()
+      - name: Retain the Windows client and source receipt
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: cytoville-graphical-acceptance
-          path: ${{ runner.temp }}/cytoville-graphical-acceptance
+          name: cytoville-windows-${{ github.sha }}
+          path: ${{ runner.temp }}/cytoville-windows/
+          if-no-files-found: error
           retention-days: 7
-          if-no-files-found: warn
+
+  acceptance:
+    uses: ./.github/workflows/e2e.yml
+
+  rust-ci:
+    name: Rust standalone tools and workspace gate
+    needs: [windows-native, acceptance]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require both native platforms and complete acceptance
+        env:
+          WINDOWS_RESULT: ${{ needs.windows-native.result }}
+          ACCEPTANCE_RESULT: ${{ needs.acceptance.result }}
+        run: test "$WINDOWS_RESULT" = success && test "$ACCEPTANCE_RESULT" = success

@@ -1,0 +1,161 @@
+# SPDX-License-Identifier: MPL-2.0
+name: CI
+on:
+  pull_request: {}
+  merge_group:
+    types: [checks_requested]
+permissions:
+  contents: read
+  actions: read
+# A ruleset-enforced copy must not share cancellation with a PR-editable copy.
+jobs:
+  coverage-measure:
+    name: Measure raw coverage (${{ matrix.role }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [base, candidate]
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+    steps:
+      - name: Checkout immutable coverage policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: catachresis-colloquium/Cytoville
+          ref: 4b88d8aa492144834fd37ea6ff0e7a730d77d195
+          path: policy
+          persist-credentials: false
+      - name: Resolve exact source revision
+        id: revision
+        env:
+          ROLE: ${{ matrix.role }}
+        run: |
+          set -euo pipefail
+          [[ $BASE_SHA =~ ^[0-9a-f]{40}$ && $CANDIDATE_SHA =~ ^[0-9a-f]{40}$ ]]
+          sha=$CANDIDATE_SHA
+          [[ $ROLE != base ]] || sha=$BASE_SHA
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Checkout measured source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.revision.outputs.sha }}
+          path: source
+          submodules: recursive
+          persist-credentials: false
+      - name: Checkout canonical coverage exporter
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: hyperpolymath/proven-cicd-and-workflows
+          ref: d28d73ef10c623b507e98ffddb040268e29b5443
+          path: proven-suite
+          sparse-checkout: scripts
+          persist-credentials: false
+      - name: Install pinned measurement tools
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 --profile minimal --component llvm-tools-preview
+          rustup default 1.99.1
+          bash policy/scripts/install-ci-native.sh --zig-only
+          curl --proto '=https' --proto-redir '=https' --fail --location --retry 3 \
+            https://github.com/taiki-e/cargo-llvm-cov/releases/download/v0.9.1/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz -o "$RUNNER_TEMP/llvm-cov.tar.gz"
+          echo "b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a  $RUNNER_TEMP/llvm-cov.tar.gz" | sha256sum --check --strict
+          mkdir "$RUNNER_TEMP/llvm-cov-bin"
+          tar -xzf "$RUNNER_TEMP/llvm-cov.tar.gz" -C "$RUNNER_TEMP/llvm-cov-bin"
+          echo "$RUNNER_TEMP/llvm-cov-bin" >> "$GITHUB_PATH"
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libasound2-dev libudev-dev libx11-dev libxrandr-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libssl-dev openssl xvfb xauth xdotool imagemagick libvulkan1 mesa-vulkan-drivers
+      - name: Install pinned BEAM
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: "28.3.1"
+          elixir-version: "1.19.4"
+      - name: Measure both languages; refuse test or export failures
+        env:
+          ROLE: ${{ matrix.role }}
+        run: bash policy/scripts/collect-coverage.sh source "$RUNNER_TEMP/coverage/$ROLE" "$ROLE" proven-suite
+      - name: Retain reports, provenance and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: raw-coverage-${{ matrix.role }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/coverage/${{ matrix.role }}
+          retention-days: 14
+          if-no-files-found: error
+
+  coverage-judge:
+    name: Raw coverage 80 percent and 5 point ratchet
+    needs: coverage-measure
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require successful measurements
+        env:
+          RESULT: ${{ needs.coverage-measure.result }}
+        run: test "$RESULT" = success
+      - name: Checkout immutable coverage policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: catachresis-colloquium/Cytoville
+          ref: 4b88d8aa492144834fd37ea6ff0e7a730d77d195
+          persist-credentials: false
+      - name: Install verified Bun 1.4.2
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --proto-redir '=https' --fail --silent --show-error --location \
+            https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64.zip \
+            --output "$RUNNER_TEMP/bun.zip"
+          echo "36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913  $RUNNER_TEMP/bun.zip" | sha256sum --check --strict
+          unzip -q "$RUNNER_TEMP/bun.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/bun-linux-x64" >> "$GITHUB_PATH"
+      - name: Test coverage refusal controls
+        run: |
+          bun test tests/workflows/coverage_gate_test.mjs
+          bash tests/workflows/coverage_collection_test.sh
+          bash tests/workflows/ci_native_download_test.sh
+      - name: Download this attempt's base report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: raw-coverage-base-${{ github.run_attempt }}
+          path: coverage/base
+      - name: Download this attempt's candidate report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: raw-coverage-candidate-${{ github.run_attempt }}
+          path: coverage/candidate
+      - name: Enforce both thresholds for each language
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          bun scripts/check-coverage.mjs coverage | tee -a "$GITHUB_STEP_SUMMARY"
+
+  gate:
+    name: CI/gate
+    needs: coverage-judge
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - name: Require measured coverage
+        env:
+          RESULT: ${{ needs.coverage-judge.result }}
+        run: test "$RESULT" = success
+      - name: Checkout gate implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: catachresis-colloquium/Cytoville
+          ref: 28781e1557c3d12cae37be26cd454321c35cbf1a
+          persist-credentials: false
+      - name: Verify refusal controls
+        run: bash tests/workflows/ci_gate_test.sh
+      - name: Require actual workflow successes at this revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_EVENT: ${{ github.event_name }}
+        run: bash scripts/check-ci-gate.sh

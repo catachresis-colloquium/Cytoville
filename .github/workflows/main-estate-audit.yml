@@ -10,10 +10,11 @@ concurrency:
   cancel-in-progress: true
 
 on:
+  merge_group:
+    types: [checks_requested]
   push:
     branches: ["main"]
-  pull_request:
-    branches: ["main"]
+  pull_request: {}
   workflow_dispatch:
 
 # Executes the enforcing gates from hyperpolymath/cicd-suite pinned at a full

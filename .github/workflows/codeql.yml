@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: MPL-2.0
 name: CodeQL Security Analysis
 on:
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
+  pull_request: {}
   schedule:
     - cron: '0 6 1 * *'   # monthly 1st 06:00 UTC (Actions burn cut, standards#288)
 concurrency:
@@ -45,3 +46,5 @@ jobs:
         uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.38.0 (4.38.1 blocked estate-wide; nexia-list#100)
         with:
           category: "/language:${{ matrix.language }}"
+          # Merge-queue refs are temporary; analyse them without uploading SARIF.
+          upload: ${{ (github.event_name != 'merge_group' && 'always') || 'never' }}
