@@ -1105,6 +1105,10 @@ mod tests {
             ))
             .id();
         let panel = app.world_mut().spawn((PanelScroll, ChildOf(root))).id();
+        let child = app.world_mut().spawn(ChildOf(panel)).id();
+        // Observer registration is deferred. Production runs schedules before
+        // input arrives; this minimal fixture must flush registration explicitly.
+        app.world_mut().flush();
         // Content height, starting panel offset, wheel units/distance, final offsets.
         for (height, start, unit, delta, panel_y, root_y) in [
             (100.0, 0.0, MouseScrollUnit::Pixel, -60.0, 0.0, 560.0),
@@ -1126,7 +1130,7 @@ mod tests {
                 ScrollPosition(Vec2::new(0.0, start)),
             ));
             app.world_mut().trigger(PointerScroll {
-                entity: panel,
+                entity: child,
                 pointer: Pointer::new(
                     PointerId::Mouse,
                     Location {
