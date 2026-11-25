@@ -268,8 +268,29 @@ const e2e = readYaml("e2e.yml");
 // runner must leave time for the collector's explicit failure at the deadline.
 const deadline = Number(read("scripts/check-ci-gate.sh")
   .match(/deadline=\$\(\(SECONDS \+ (\d+)\)\)/)?.[1]);
-const nativeMinutes = rust.jobs["windows-native"]["timeout-minutes"] +
-  e2e.jobs.acceptance["timeout-minutes"] + rust.jobs["rust-ci"]["timeout-minutes"];
+// The collector observes PR/merge_group producers, not manual release builds.
+// Accept only a positive literal or this deliberately narrow manual override;
+// an unknown expression must fail rather than silently shortening the budget.
+const requiredEventMinutes = (value) => {
+  if (Number.isSafeInteger(value) && value > 0) return value;
+  const match = typeof value === "string" && value.match(
+    /^\$\{\{ github\.event_name == 'workflow_dispatch' && ([1-9]\d*) \|\| ([1-9]\d*) \}\}$/);
+  assert.ok(match, "unsupported timeout expression for required producer");
+  assert.ok(match.slice(1).every((n) => Number.isSafeInteger(Number(n))),
+    "timeout must be a safe positive integer");
+  return Number(match[2]);
+};
+assert.equal(requiredEventMinutes(25), 25);
+assert.equal(requiredEventMinutes("${{ github.event_name == 'workflow_dispatch' && 75 || 30 }}"), 30);
+for (const invalid of [undefined, 0, -1, 1.5, "20", "${{ inputs.timeout }}",
+  "${{ github.event_name == 'pull_request' && 60 || 20 }}",
+  "${{ github.event_name == 'workflow_dispatch' && 60 || 0 }}",
+  "${{ github.event_name == 'workflow_dispatch' && 60 || 9007199254740992 }}"]) {
+  assert.throws(() => requiredEventMinutes(invalid));
+}
+const nativeMinutes = requiredEventMinutes(rust.jobs["windows-native"]["timeout-minutes"]) +
+  requiredEventMinutes(e2e.jobs.acceptance["timeout-minutes"]) +
+  requiredEventMinutes(rust.jobs["rust-ci"]["timeout-minutes"]);
 assert.ok(Number.isFinite(deadline) && deadline >= (nativeMinutes + 15) * 60,
   "collector must allow sequential native jobs plus scheduling headroom");
 assert.ok(aggregate.jobs.gate["timeout-minutes"] * 60 >= deadline + 300,
