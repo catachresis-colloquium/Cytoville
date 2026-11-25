@@ -53,6 +53,16 @@ enum Screen {
 #[derive(Component)]
 #[require(ScrollPosition)]
 struct PanelScroll;
+type ScrollContainers<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        Option<&'static Screen>,
+        Has<PanelScroll>,
+        &'static ScrollPosition,
+    ),
+>;
 #[derive(Component)]
 struct CellPulse;
 #[derive(Component)]
@@ -832,7 +842,7 @@ fn scroll_screen(
 fn render(
     mut commands: Commands,
     mut s: ResMut<Session>,
-    screens: Query<(Entity, &Screen, &ScrollPosition)>,
+    containers: ScrollContainers,
     mut images: ResMut<Assets<Image>>,
     mut portraits: ResMut<portrait::Cache>,
     mut artwork: ResMut<city::Artwork>,
@@ -870,12 +880,22 @@ fn render(
     } else {
         Screen::Game
     };
-    let scroll = screens
+    let scroll = containers
         .iter()
-        .find_map(|(_, previous, scroll)| (*previous == screen).then(|| scroll.clone()))
+        .find_map(|(_, previous, _, scroll)| (previous == Some(&screen)).then(|| scroll.clone()))
         .unwrap_or_default();
-    for (entity, _, _) in &screens {
-        commands.entity(entity).despawn();
+    let panel_scroll = if screen == Screen::Game {
+        containers
+            .iter()
+            .find_map(|(_, _, panel, scroll)| panel.then(|| scroll.clone()))
+            .unwrap_or_default()
+    } else {
+        ScrollPosition::default()
+    };
+    for (entity, root, _, _) in &containers {
+        if root.is_some() {
+            commands.entity(entity).despawn();
+        }
     }
     if settings.open {
         commands
@@ -982,7 +1002,7 @@ fn render(
                 // of the bottom-row districts, including in a 720p window.
                 map.spawn((Pickable::IGNORE,Node{position_type:PositionType::Absolute,left:Val::Px(12.0),right:Val::Px(12.0),bottom:Val::Px(8.0),..default()})).with_child((Pickable::IGNORE,text(if s.map_message.is_empty(){"Click a district picture or name; choose an action on the right."}else{&s.map_message},13.0,ui_mint)));
             });
-            body.spawn((PanelScroll,Node{width:Val::Percent(44.0),min_height:Val::Px(0.0),overflow:Overflow::scroll_y(),padding:UiRect::all(Val::Px(14.0)),..column()},BackgroundColor(ui_panel))).with_children(|panel|{
+            body.spawn((PanelScroll,panel_scroll,Node{width:Val::Percent(44.0),min_height:Val::Px(0.0),overflow:Overflow::scroll_y(),padding:UiRect::all(Val::Px(14.0)),..column()},BackgroundColor(ui_panel))).with_children(|panel|{
                 if s.inspect{panel.spawn(text("EXPRESSED ORGANELLES",22.0,ui_mint));let page=s.page.min(a.organelles.len().div_ceil(4).saturating_sub(1));for id in a.organelles.iter().skip(page*4).take(4){let o=&c.organelles[id];panel.spawn(text(o.name.clone(),18.0,ui_mint));panel.spawn(text(format!("{} {}",o.effect,o.science),14.0,ui_ink));}panel.spawn(button(Click::Page((page+1)%a.organelles.len().div_ceil(4).max(1)),true)).with_child(text("Next organelles",15.0,ui_ink));panel.spawn(button(Click::Inspect,true)).with_child(text("Back to district",15.0,ui_ink));
                 }else if let Some(event)=g.pending_event.as_ref().and_then(|id|c.events.iter().find(|e|e.id==*id)){
                     panel.spawn(text(event.title.clone(),22.0,ui_mint));panel.spawn(text(event.extra.get("prompt").and_then(|v|v.as_str()).unwrap_or("Encounter"),16.0,ui_ink));for choice in &event.choices{let lock=turn::choice_lock(a,choice);panel.spawn(button(Click::Game(GameCommand::Choose{id:choice.id.clone()}),lock.is_none())).with_child(text(format!("{}{}",choice.label,lock.map(|l|format!(" · {l}")).unwrap_or_default()),15.0,ui_ink));}
@@ -1295,6 +1315,55 @@ mod tests {
                 .resource_mut::<ButtonInput<KeyCode>>()
                 .reset_all();
         }
+        {
+            let mut settings = app.world_mut().resource_mut::<settings::Settings>();
+            settings.open = false;
+            settings.edit_ai_name = None;
+        }
+        {
+            let mut session = app.world_mut().resource_mut::<Session>();
+            session.menu = false;
+            session.name_edit = None;
+            session.dirty = true;
+        }
+        app.update();
+        for (action, expected) in [(Click::Inspect, 120.0), (Click::Inspect, 120.0)] {
+            let panel = app
+                .world_mut()
+                .query_filtered::<Entity, With<PanelScroll>>()
+                .single(app.world())
+                .unwrap();
+            app.world_mut().get_mut::<ScrollPosition>(panel).unwrap().y = 120.0;
+            let control = app.world_mut().spawn((action, Enabled(true))).id();
+            app.world_mut().trigger(Activate { entity: control });
+            app.update();
+            let (replacement, scroll) = app
+                .world_mut()
+                .query_filtered::<(Entity, &ScrollPosition), With<PanelScroll>>()
+                .single(app.world())
+                .unwrap();
+            assert_ne!(replacement, panel);
+            assert_eq!(
+                scroll.y, expected,
+                "action-panel rebuild preserves its offset"
+            );
+        }
+        for _ in 0..2 {
+            let control = app.world_mut().spawn((Click::Settings, Enabled(true))).id();
+            app.world_mut().trigger(Activate { entity: control });
+            app.update();
+        }
+        let scroll = app
+            .world_mut()
+            .query_filtered::<&ScrollPosition, With<PanelScroll>>()
+            .single(app.world())
+            .unwrap();
+        assert_eq!(scroll.y, 0.0, "changing screens resets the action panel");
+        assert_eq!(
+            serde_json::to_value(&app.world().resource::<Session>().runtime).unwrap(),
+            before,
+            "scroll and inspection changes preserve the authoritative game"
+        );
     }
 
     #[test]
