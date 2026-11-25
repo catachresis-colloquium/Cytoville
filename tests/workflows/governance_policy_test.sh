@@ -206,6 +206,21 @@ console.log("PASS: current draft canon identity and original mint provenance are
 // A skipped or failed reusable acceptance job must never turn the established
 // required Rust check green. Exercise its actual shell verdict for every result.
 const rust = readYaml("rust-ci.yml");
+// A push must not cancel a manually requested desktop artifact build.
+const rustGroup = (event, ref) => {
+  const values = { workflow: rust.name, event_name: event, ref };
+  const group = rust.concurrency.group.replace(
+    /\$\{\{ github\.(workflow|event_name|ref) \}\}/g, (_, key) => values[key]);
+  assert.ok(!group.includes("${{"), "unsupported Rust concurrency expression");
+  return group;
+};
+for (const branch of ["main", "master"]) {
+  assert.notEqual(rustGroup("workflow_dispatch", `refs/heads/${branch}`),
+    rustGroup("push", `refs/heads/${branch}`));
+}
+assert.notEqual(rustGroup("pull_request", "refs/pull/1/merge"),
+  rustGroup("pull_request", "refs/pull/2/merge"));
+assert.equal(rust.concurrency["cancel-in-progress"], true);
 // CI/gate must run on PRs and synthetic merge-queue commits, with producers
 // that cannot disappear behind path filters. Advisory reporters stay advisory.
 const required = read("ci/required-workflows.txt").split(/\r?\n/)
@@ -268,8 +283,29 @@ const e2e = readYaml("e2e.yml");
 // runner must leave time for the collector's explicit failure at the deadline.
 const deadline = Number(read("scripts/check-ci-gate.sh")
   .match(/deadline=\$\(\(SECONDS \+ (\d+)\)\)/)?.[1]);
-const nativeMinutes = rust.jobs["windows-native"]["timeout-minutes"] +
-  e2e.jobs.acceptance["timeout-minutes"] + rust.jobs["rust-ci"]["timeout-minutes"];
+// The collector observes PR/merge_group producers, not manual release builds.
+// Accept only a positive literal or this deliberately narrow manual override;
+// an unknown expression must fail rather than silently shortening the budget.
+const requiredEventMinutes = (value) => {
+  if (Number.isSafeInteger(value) && value > 0) return value;
+  const match = typeof value === "string" && value.match(
+    /^\$\{\{ github\.event_name == 'workflow_dispatch' && ([1-9]\d*) \|\| ([1-9]\d*) \}\}$/);
+  assert.ok(match, "unsupported timeout expression for required producer");
+  assert.ok(match.slice(1).every((n) => Number.isSafeInteger(Number(n))),
+    "timeout must be a safe positive integer");
+  return Number(match[2]);
+};
+assert.equal(requiredEventMinutes(25), 25);
+assert.equal(requiredEventMinutes("${{ github.event_name == 'workflow_dispatch' && 75 || 30 }}"), 30);
+for (const invalid of [undefined, 0, -1, 1.5, "20", "${{ inputs.timeout }}",
+  "${{ github.event_name == 'pull_request' && 60 || 20 }}",
+  "${{ github.event_name == 'workflow_dispatch' && 60 || 0 }}",
+  "${{ github.event_name == 'workflow_dispatch' && 60 || 9007199254740992 }}"]) {
+  assert.throws(() => requiredEventMinutes(invalid));
+}
+const nativeMinutes = requiredEventMinutes(rust.jobs["windows-native"]["timeout-minutes"]) +
+  requiredEventMinutes(e2e.jobs.acceptance["timeout-minutes"]) +
+  requiredEventMinutes(rust.jobs["rust-ci"]["timeout-minutes"]);
 assert.ok(Number.isFinite(deadline) && deadline >= (nativeMinutes + 15) * 60,
   "collector must allow sequential native jobs plus scheduling headroom");
 assert.ok(aggregate.jobs.gate["timeout-minutes"] * 60 >= deadline + 300,
