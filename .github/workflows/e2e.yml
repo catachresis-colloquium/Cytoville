@@ -18,7 +18,9 @@ jobs:
           submodules: recursive
 
       - name: Install pinned game native tools
-        run: bash scripts/install-ci-native.sh
+        run: |
+          bash tests/workflows/ci_native_download_test.sh
+          bash scripts/install-ci-native.sh
 
       - name: Install BEAM for authoritative multiplayer tests
         uses: erlef/setup-beam@v1.24.1

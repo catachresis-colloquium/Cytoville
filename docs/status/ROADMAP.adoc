@@ -22,6 +22,42 @@ alpha; hosting stays local.
 
 == Remaining release work
 
+=== Delivery order clarified with the owner, 2026-11-24
+
+Deliver a complete, responsive single-player MVP before expanding the
+player-facing multiplayer experience. Existing Elixir transport, local TLS,
+resume and two-human protocol tests remain in place and must keep passing.
+This is a sequencing decision, not removal of multiplayer from the product.
+
+. *Single-player MVP:* coherent specimen/scenario selection and instructions;
+  responsive visible map travel and district actions; a complete supported
+  scenario through win/loss; understandable rival turns; save/restart/resume;
+  usable settings and measured native desktop response. A short scripted
+  graphical journey alone does not close this milestone.
+. *Local two-player alpha:* in-game host/join/resume, clear waiting and connection
+  feedback, two simultaneous graphical clients, complete match, disconnect and
+  resume without duplicate commands, and state convergence against the shared
+  runtime. Preserve authenticated seats and certificate/hostname validation.
+. *Release candidate:* installation and clean-machine startup, broader
+  accessibility/graphics/sound acceptance, balanced scenarios, recoverable
+  saves and release evidence. Public hosting remains deferred by the owner.
+
+IDApTIK's reusable designs and tests, with exact source revision and transfer
+limits, are retained in link:../architecture/IDAPTIK-REUSE.adoc[IDApTIK reuse].
+Accelerators, GSA and expanded encounter scenes remain planned; they must not
+delay a playable core or be advertised as working integrations prematurely.
+
+=== Open work
+
+The 2026-11-24 MVP follow-up drafts a selected-specimen portrait and scenario
+objectives on the landing screen, bounded portrait caching, a non-shrinking
+checklist and scrollable short-window content with Page Up / Page Down.
+Unchanged pulse transforms are no longer written in reduced-motion mode.
+The graphical journey now requests 1280x720 screenshots and checks that viewport
+navigation preserves the saved runtime. These changes require compilation,
+visual inspection and current-head acceptance before being called complete.
+No measured desktop speedup or full-scenario completion is asserted.
+
 * Establish a frame-time and input-latency baseline on the target machine in a
   release build; profile rendering, UI rebuilds, native turns and networking.
   Idle rename redraws, layout-changing pulse animation and repeated portrait

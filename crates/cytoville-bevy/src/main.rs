@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+use bevy::input::mouse::{MouseScrollPixelsPerLine, MouseScrollUnit};
 use bevy::picking::Pickable;
+use bevy::picking::events::PointerScroll;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui::Pressed;
-use bevy::ui_widgets::{Activate, Button};
+use bevy::ui_widgets::{Activate, Button, ScrollArea};
 use cytoville_bevy::network;
 use cytoville_core::{Command as GameCommand, Content, actions, rules, turn};
 use cytoville_runtime::Runtime;
@@ -42,8 +44,25 @@ struct Session {
     name_edit: Option<String>,
     inspect: bool,
 }
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
+enum Screen {
+    Selection,
+    Game,
+    Settings(settings::Tab),
+}
 #[derive(Component)]
-struct Screen;
+#[require(ScrollPosition)]
+struct PanelScroll;
+type ScrollContainers<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        Option<&'static Screen>,
+        Has<PanelScroll>,
+        &'static ScrollPosition,
+    ),
+>;
 #[derive(Component)]
 struct CellPulse;
 #[derive(Component)]
@@ -105,6 +124,7 @@ fn button(action: Click, enabled: bool) -> impl Bundle {
         Node {
             padding: UiRect::axes(Val::Px(12.0), Val::Px(9.0)),
             border: UiRect::all(Val::Px(1.0)),
+            flex_shrink: 0.0,
             ..default()
         },
         BackgroundColor(if enabled {
@@ -269,6 +289,7 @@ fn main() {
             frames: 0,
         })
         .add_observer(interact)
+        .add_observer(scroll_panel)
         .add_systems(
             Update,
             (
@@ -278,6 +299,7 @@ fn main() {
                 settings::apply,
                 settings::poll_research,
                 render,
+                scroll_screen,
                 animate,
                 city::animate,
                 button_feedback,
@@ -762,10 +784,65 @@ fn network_updates(mut s: ResMut<Session>) {
         }
     }
 }
+fn scroll_panel(
+    mut event: On<PointerScroll>,
+    conversion: Res<MouseScrollPixelsPerLine>,
+    mut panels: Query<(&ComputedNode, &mut ScrollPosition), With<PanelScroll>>,
+) {
+    let Ok((node, mut scroll)) = panels.get_mut(event.entity) else {
+        return;
+    };
+    if node.is_empty() {
+        return;
+    }
+    let pixels = event.to_pixels(&conversion);
+    let max = ((node.content_size().y - node.size().y) * node.inverse_scale_factor).max(0.0);
+    let old = scroll.y.clamp(0.0, max);
+    let next = (old - pixels.y).clamp(0.0, max);
+    scroll.y = next;
+    // Bubble only the unconsumed distance to the outer page. A panel at its
+    // boundary (or without overflow) must not trap wheel/trackpad input.
+    event.unit = MouseScrollUnit::Pixel;
+    event.x = pixels.x;
+    event.y = pixels.y - (old - next);
+    let remaining = event.x != 0.0 || event.y != 0.0;
+    event.propagate(remaining);
+}
+fn scroll_screen(
+    keys: Res<ButtonInput<KeyCode>>,
+    s: Res<Session>,
+    settings: Res<settings::Settings>,
+    mut roots: Query<(&ComputedNode, &mut ScrollPosition), With<Screen>>,
+) {
+    if (settings.open && settings.tab == settings::Tab::Players && settings.edit_ai_name.is_some())
+        || (!settings.open && !s.menu && s.name_edit.is_some())
+    {
+        return;
+    }
+    for (node, mut scroll) in &mut roots {
+        // A rebuilt root has no layout until PostUpdate. Do not clamp its
+        // restored offset against the temporary zero-sized ComputedNode.
+        if node.is_empty() {
+            continue;
+        }
+        let height = node.size().y * node.inverse_scale_factor;
+        let max = ((node.content_size().y - node.size().y) * node.inverse_scale_factor).max(0.0);
+        let next = if keys.just_pressed(KeyCode::PageDown) {
+            (scroll.y + height * 0.8).min(max)
+        } else if keys.just_pressed(KeyCode::PageUp) {
+            (scroll.y - height * 0.8).max(0.0)
+        } else {
+            scroll.y.min(max)
+        };
+        if next != scroll.y {
+            scroll.y = next;
+        }
+    }
+}
 fn render(
     mut commands: Commands,
     mut s: ResMut<Session>,
-    screens: Query<Entity, With<Screen>>,
+    containers: ScrollContainers,
     mut images: ResMut<Assets<Image>>,
     mut portraits: ResMut<portrait::Cache>,
     mut artwork: ResMut<city::Artwork>,
@@ -796,17 +873,41 @@ fn render(
     };
     let _timing = performance::Span::new("screen_rebuild_cpu_ms");
     s.dirty = false;
-    for entity in &screens {
-        commands.entity(entity).despawn();
+    let screen = if settings.open {
+        Screen::Settings(settings.tab)
+    } else if s.menu {
+        Screen::Selection
+    } else {
+        Screen::Game
+    };
+    let scroll = containers
+        .iter()
+        .find_map(|(_, previous, _, scroll)| (previous == Some(&screen)).then(|| scroll.clone()))
+        .unwrap_or_default();
+    let panel_scroll = if screen == Screen::Game {
+        containers
+            .iter()
+            .find_map(|(_, _, panel, scroll)| panel.then(|| scroll.clone()))
+            .unwrap_or_default()
+    } else {
+        ScrollPosition::default()
+    };
+    for (entity, root, _, _) in &containers {
+        if root.is_some() {
+            commands.entity(entity).despawn();
+        }
     }
     if settings.open {
         commands
             .spawn((
-                Screen,
+                screen,
+                ScrollArea,
+                scroll,
                 Node {
                     width: Val::Percent(100.),
                     height: Val::Percent(100.),
                     padding: UiRect::all(Val::Px(24.)),
+                    overflow: Overflow::scroll_y(),
                     ..column()
                 },
                 BackgroundColor(ui_bg),
@@ -820,15 +921,24 @@ fn render(
     let g = &s.runtime.game;
     let seat = s.network.as_ref().map(|n| n.seat).unwrap_or(0);
     let a = &g.actors[seat];
-    let portrait = portraits.get(seat, a, &g.looks[seat], &mut images);
-    let rival = portraits.get(
-        1 - seat,
-        &g.actors[1 - seat],
-        &g.looks[1 - seat],
-        &mut images,
-    );
+    let portrait = if s.menu {
+        let id = &c.specimen_order[s.specimen];
+        portraits.specimen(id, &c.specimens[id], &mut images)
+    } else {
+        portraits.get(seat, a, &g.looks[seat], &mut images)
+    };
+    let rival = if s.menu {
+        portrait.clone()
+    } else {
+        portraits.get(
+            1 - seat,
+            &g.actors[1 - seat],
+            &g.looks[1 - seat],
+            &mut images,
+        )
+    };
     let city_image = (!s.menu).then(|| artwork.get(c, &mut images));
-    commands.spawn((Screen,Node{width:Val::Percent(100.0),height:Val::Percent(100.0),padding:UiRect::all(Val::Px(24.0)),..column()},BackgroundColor(ui_bg))).with_children(|root|{
+    commands.spawn((screen,ScrollArea,scroll,Node{width:Val::Percent(100.0),height:Val::Percent(100.0),padding:UiRect::all(Val::Px(24.0)),overflow:Overflow::scroll_y(),..column()},BackgroundColor(ui_bg))).with_children(|root|{
         root.spawn(Node{align_items:AlignItems::Center,justify_content:JustifyContent::SpaceBetween,..default()}).with_children(|head|{head.spawn(text("CYTOVILLE",32.0,ui_mint));head.spawn(text("ONE CELL. ONE LIFETIME. A WHOLE CITY.",15.0,ui_ink));head.spawn(button(Click::Settings,true)).with_child(text("Settings",15.0,ui_mint));if !s.menu{head.spawn(button(Click::Menu,true)).with_child(text("Menu",15.0,ui_ink));head.spawn(button(Click::Save,s.network.is_none())).with_child(text("Save · F5",15.0,ui_ink));}});
 
         if !s.message.is_empty(){root.spawn(text(s.message.clone(),15.0,Color::srgb(1.0,0.75,0.38)));}
@@ -837,14 +947,32 @@ fn render(
             root.spawn(text("A protist life simulation and time-management strategy",23.0,ui_ink));root.spawn(text("Develop one cell through its ontogeny. Earn biomass, express organelles and finish your checklist before your rival.",17.0,ui_ink));root.spawn(text("CHOOSE YOUR SPECIMEN",16.0,ui_mint));
             root.spawn(Node{flex_wrap:FlexWrap::Wrap,column_gap:Val::Px(8.0),row_gap:Val::Px(8.0),..default()}).with_children(|row|{for(i,id)in c.specimen_order.iter().enumerate(){row.spawn(button(Click::Specimen(i),true)).with_child(text(format!("{}{}",if s.specimen==i{"● "}else{""},c.specimens[id].name),17.0,ui_ink));}});
             let sp=&c.specimens[&c.specimen_order[s.specimen]];root.spawn(text(format!("{} · {}",sp.latin,sp.title),20.0,ui_mint));root.spawn(text(sp.blurb.clone(),17.0,ui_ink));root.spawn(text("CHOOSE YOUR CELL CYCLE",16.0,ui_mint));
-            for(i,id)in c.scenario_order.iter().enumerate(){root.spawn(button(Click::Scenario(i),true)).with_child(text(format!("{}{} · {} cycles",if s.scenario==i{"● "}else{""},c.scenarios[id].name,c.scenarios[id].turn_limit),18.0,ui_ink));}
-            root.spawn(Node{column_gap:Val::Px(10.0),..default()}).with_children(|row|{for(i,name)in["Gentle","Standard","Fierce"].iter().enumerate(){row.spawn(button(Click::Difficulty(i),true)).with_child(text(format!("{}{}",if s.difficulty==i{"● "}else{""},name),16.0,ui_ink));}});
-            root.spawn(Node{column_gap:Val::Px(12.0),margin:UiRect::top(Val::Px(12.0)),..default()}).with_children(|row|{row.spawn(button(Click::Start,true)).with_child(text("Begin life →",22.0,ui_mint));row.spawn(button(Click::Continue,true)).with_child(text("Continue · F9",20.0,ui_ink));});
-            root.spawn(text("Travel spends ATP. Eat every cycle. Rest to control stress. End a cycle with Space. Progress autosaves after every accepted command.",16.0,ui_ink));return;
+            root.spawn(Node{column_gap:Val::Px(24.0),flex_shrink:0.0,..default()}).with_children(|selection|{
+                selection.spawn(Node{width:Val::Percent(64.0),..column()}).with_children(|choices|{
+                    for(i,id)in c.scenario_order.iter().enumerate(){choices.spawn(button(Click::Scenario(i),true)).with_child(text(format!("{}{} · {} cycles",if s.scenario==i{"● "}else{""},c.scenarios[id].name,c.scenarios[id].turn_limit),18.0,ui_ink));}
+                    choices.spawn(Node{column_gap:Val::Px(10.0),flex_wrap:FlexWrap::Wrap,..default()}).with_children(|row|{for(i,name)in["Gentle","Standard","Fierce"].iter().enumerate(){row.spawn(button(Click::Difficulty(i),true)).with_child(text(format!("{}{}",if s.difficulty==i{"● "}else{""},name),16.0,ui_ink));}});
+                    choices.spawn(Node{column_gap:Val::Px(12.0),margin:UiRect::top(Val::Px(12.0)),flex_wrap:FlexWrap::Wrap,..default()}).with_children(|row|{row.spawn(button(Click::Start,true)).with_child(text("Begin life →",22.0,ui_mint));row.spawn(button(Click::Continue,true)).with_child(text("Continue · F9",20.0,ui_ink));});
+                });
+                selection.spawn((Node{flex_grow:1.0,flex_basis:Val::Px(0.0),padding:UiRect::all(Val::Px(16.0)),align_items:AlignItems::Center,border_radius:BorderRadius::all(Val::Px(18.0)),..column()},BackgroundColor(ui_panel))).with_children(|preview|{
+                    preview.spawn(text(sp.name.clone(),23.0,ui_mint));
+                    preview.spawn((Pickable::IGNORE,CellPulse,UiTransform::default(),ImageNode::new(portrait.clone()),Node{width:Val::Px(180.0),height:Val::Px(180.0),flex_shrink:0.0,..default()}));
+                    preview.spawn(text("YOUR CELL · AT THE START OF LIFE",13.0,ui_mint));
+                    let organelles=sp.start_organelles.iter().map(|id|c.organelles[id].name.as_str()).collect::<Vec<_>>().join(" · ");
+                    preview.spawn(text(organelles,14.0,ui_ink));
+                });
+            });
+            root.spawn(text("Travel spends ATP. Eat every cycle. Rest to control stress. End a cycle with Space. Progress autosaves after every accepted command.",16.0,ui_ink));
+            root.spawn((Node{padding:UiRect::all(Val::Px(16.0)),flex_shrink:0.0,..column()},BackgroundColor(ui_panel))).with_children(|brief|{
+                let scenario=&c.scenarios[&c.scenario_order[s.scenario]];
+                brief.spawn(text(format!("YOUR GOAL · {}",scenario.name),18.0,ui_mint));
+                brief.spawn(text("Complete every objective before the rival cell and before the final cycle. Click a district, then choose an action in its panel. Scroll or use Page Up / Page Down for more.",15.0,ui_ink));
+                for q in &scenario.quests {brief.spawn(text(format!("○ {}",q.label),15.0,ui_ink));}
+            });
+            return;
         }
         root.spawn(text(format!("CYCLE {} / {} · {} → {} | {} · {}",g.turn,c.scenarios[&g.scenario_id].turn_limit,c.weather[&g.weather].name,c.weather[&g.forecast].name,a.name,a.phase),18.0,ui_ink));root.spawn(text(format!("ATP {} / {}     Biomass {} μg C     Nutrition {:.0}%     Stress {:.0}%     Size {:.1}%     Genes T{}",a.atp,a.atp_max,a.biomass,a.nutrition,a.stress,a.size,a.transcription),20.0,ui_mint));
         if g.status!="playing"{root.spawn(text(format!("{} · {}",g.status.to_uppercase(),g.winner.map(|i|format!("{} completed the checklist",g.actors[i].name)).unwrap_or("The biofilm exhausted its nutrients".into())),25.0,ui_mint));}else if g.active!=seat{root.spawn(text("Waiting for the other cell's turn…",18.0,ui_ink));}
-        root.spawn(Node{width:Val::Percent(100.0),flex_grow:1.0,min_height:Val::Px(360.0),column_gap:Val::Px(18.0),..default()}).with_children(|body|{
+        root.spawn(Node{width:Val::Percent(100.0),flex_grow:1.0,flex_basis:Val::Px(0.0),min_height:Val::Px(360.0),column_gap:Val::Px(18.0),..default()}).with_children(|body|{
             body.spawn((Node{width:Val::Percent(56.0),height:Val::Percent(100.0),position_type:PositionType::Relative,..default()},BackgroundColor(ui_panel))).with_children(|map|{
                 map.spawn((Pickable::IGNORE,ImageNode::new(city_image.clone().expect("playing city")),Node{position_type:PositionType::Absolute,width:Val::Percent(100.0),height:Val::Percent(100.0),..default()}));
                 for i in 0..12 {
@@ -870,10 +998,11 @@ fn render(
                         marker.spawn((Pickable::IGNORE,Node{position_type:PositionType::Absolute,left:Val::Px(-21.),top:Val::Px(20.),padding:UiRect::axes(Val::Px(4.),Val::Px(2.)),border_radius:BorderRadius::all(Val::Px(4.)),..default()},BackgroundColor(ui_bg))).with_child((Pickable::IGNORE,text(label,10.,color)));
                     });
                 }
-                map.spawn((CellPulse,UiTransform::default(),ImageNode::new(portrait.clone()),Node{position_type:PositionType::Absolute,left:Val::Px(8.0),bottom:Val::Px(4.0),width:Val::Px(130.0),height:Val::Px(130.0),..default()}));
-                map.spawn(Node{position_type:PositionType::Absolute,left:Val::Px(145.0),right:Val::Px(12.0),bottom:Val::Px(18.0),..column()}).with_children(|info|{info.spawn(text(format!("{} · {}",c.specimens[&a.specimen].name,g.looks[seat].pattern),15.0,ui_ink));info.spawn(text(format!("{} organelles · {} stored meals · {}",a.organelles.len(),a.storage_stock,a.phase),14.0,ui_ink));info.spawn(text(if s.map_message.is_empty(){"Click a district picture or name; choose an action on the right."}else{&s.map_message},13.0,ui_mint));});
+                // Actor markers already show the cells. Keep the map footer clear
+                // of the bottom-row districts, including in a 720p window.
+                map.spawn((Pickable::IGNORE,Node{position_type:PositionType::Absolute,left:Val::Px(12.0),right:Val::Px(12.0),bottom:Val::Px(8.0),..default()})).with_child((Pickable::IGNORE,text(if s.map_message.is_empty(){"Click a district picture or name; choose an action on the right."}else{&s.map_message},13.0,ui_mint)));
             });
-            body.spawn((Node{width:Val::Percent(44.0),padding:UiRect::all(Val::Px(14.0)),..column()},BackgroundColor(ui_panel))).with_children(|panel|{
+            body.spawn((PanelScroll,panel_scroll,Node{width:Val::Percent(44.0),min_height:Val::Px(0.0),overflow:Overflow::scroll_y(),padding:UiRect::all(Val::Px(14.0)),..column()},BackgroundColor(ui_panel))).with_children(|panel|{
                 if s.inspect{panel.spawn(text("EXPRESSED ORGANELLES",22.0,ui_mint));let page=s.page.min(a.organelles.len().div_ceil(4).saturating_sub(1));for id in a.organelles.iter().skip(page*4).take(4){let o=&c.organelles[id];panel.spawn(text(o.name.clone(),18.0,ui_mint));panel.spawn(text(format!("{} {}",o.effect,o.science),14.0,ui_ink));}panel.spawn(button(Click::Page((page+1)%a.organelles.len().div_ceil(4).max(1)),true)).with_child(text("Next organelles",15.0,ui_ink));panel.spawn(button(Click::Inspect,true)).with_child(text("Back to district",15.0,ui_ink));
                 }else if let Some(event)=g.pending_event.as_ref().and_then(|id|c.events.iter().find(|e|e.id==*id)){
                     panel.spawn(text(event.title.clone(),22.0,ui_mint));panel.spawn(text(event.extra.get("prompt").and_then(|v|v.as_str()).unwrap_or("Encounter"),16.0,ui_ink));for choice in &event.choices{let lock=turn::choice_lock(a,choice);panel.spawn(button(Click::Game(GameCommand::Choose{id:choice.id.clone()}),lock.is_none())).with_child(text(format!("{}{}",choice.label,lock.map(|l|format!(" · {l}")).unwrap_or_default()),15.0,ui_ink));}
@@ -886,7 +1015,7 @@ fn render(
                 panel.spawn(button(Click::Game(GameCommand::EndTurn),g.pending_event.is_none()&&g.active==seat)).with_child(text("End cycle · Space →",20.0,ui_mint));
             });
         });
-        root.spawn(Node{column_gap:Val::Px(24.0),..default()}).with_children(|bottom|{
+        root.spawn(Node{column_gap:Val::Px(24.0),flex_shrink:0.0,..default()}).with_children(|bottom|{
             bottom.spawn(Node{width:Val::Percent(56.0),..column()}).with_children(|goals|{goals.spawn(text("ONTOGENETIC QUEST CHECKLIST",15.0,ui_mint));for q in &c.scenarios[&g.scenario_id].quests{goals.spawn(text(format!("{} {} [{:.0} / {:.0}]",if a.done.contains(&q.id){"✓"}else{"○"},q.label,rules::quest_value(c,a,q),q.target),14.0,ui_ink));}});
             bottom.spawn(Node{width:Val::Percent(44.0),..column()}).with_children(|log|{log.spawn(text(format!("RIVAL: {} · {} goals · {}",g.actors[1-seat].name,g.actors[1-seat].done.len(),g.actors[1-seat].location),15.0,ui_mint));for line in g.log.iter().rev().take(4){log.spawn(text(line,13.0,ui_ink));}});
         });
@@ -909,7 +1038,10 @@ fn animate(
         };
         for mut cell in &mut cells {
             // A visual pulse must not invalidate the UI layout every frame.
-            cell.scale = Vec2::splat(scale);
+            let next = Vec2::splat(scale);
+            if cell.scale != next {
+                cell.scale = next;
+            }
         }
     }
     if s.smoke_until.is_some_and(|d| Instant::now() >= d) {
@@ -962,6 +1094,277 @@ fn capture(mut commands: Commands, mut c: ResMut<Capture>) {
 mod tests {
     use super::*;
     use std::sync::{Mutex, mpsc};
+
+    #[test]
+    fn nested_panel_passes_only_unused_wheel_distance_to_the_page() {
+        use bevy::camera::NormalizedRenderTarget;
+        use bevy::input::touch::TouchPhase;
+        use bevy::picking::{
+            backend::HitData,
+            events::Pointer,
+            pointer::{Location, PointerId},
+        };
+        let mut app = App::new();
+        app.init_resource::<MouseScrollPixelsPerLine>()
+            .add_plugins(bevy::ui_widgets::ScrollAreaPlugin)
+            .add_observer(scroll_panel);
+        // PointerTraversal queries Option<&Window>. Even an optional component
+        // must be registered for EntityRef::get_components to construct its state.
+        app.world_mut().register_component::<Window>();
+        let root = app
+            .world_mut()
+            .spawn((
+                ScrollArea,
+                Node {
+                    overflow: Overflow::scroll_y(),
+                    ..default()
+                },
+                ComputedNode {
+                    size: Vec2::splat(100.0),
+                    content_size: Vec2::new(100.0, 1100.0),
+                    inverse_scale_factor: 1.0,
+                    ..default()
+                },
+            ))
+            .id();
+        let panel = app.world_mut().spawn((PanelScroll, ChildOf(root))).id();
+        let child = app.world_mut().spawn(ChildOf(panel)).id();
+        // Observer registration is deferred. Production runs schedules before
+        // input arrives; this minimal fixture must flush registration explicitly.
+        app.world_mut().flush();
+        assert!(
+            app.world()
+                .entity(child)
+                .get_components::<bevy::picking::events::PointerTraversal>()
+                .is_ok(),
+            "fixture must support the production pointer traversal"
+        );
+        // Content height, starting panel offset, wheel units/distance, final offsets.
+        for (height, start, unit, delta, panel_y, root_y) in [
+            (100.0, 0.0, MouseScrollUnit::Pixel, -60.0, 0.0, 560.0),
+            (200.0, 100.0, MouseScrollUnit::Pixel, -60.0, 100.0, 560.0),
+            (200.0, 0.0, MouseScrollUnit::Pixel, 60.0, 0.0, 440.0),
+            (200.0, 80.0, MouseScrollUnit::Pixel, -60.0, 100.0, 540.0),
+            (200.0, 20.0, MouseScrollUnit::Pixel, 60.0, 0.0, 460.0),
+            (200.0, 20.0, MouseScrollUnit::Pixel, -60.0, 80.0, 500.0),
+            (200.0, 80.0, MouseScrollUnit::Line, -1.0, 100.0, 580.0),
+        ] {
+            app.world_mut().get_mut::<ScrollPosition>(root).unwrap().y = 500.0;
+            app.world_mut().entity_mut(panel).insert((
+                ComputedNode {
+                    size: Vec2::splat(100.0),
+                    content_size: Vec2::new(100.0, height),
+                    inverse_scale_factor: 1.0,
+                    ..default()
+                },
+                ScrollPosition(Vec2::new(0.0, start)),
+            ));
+            app.world_mut().trigger(PointerScroll {
+                entity: child,
+                pointer: Pointer::new(
+                    PointerId::Mouse,
+                    Location {
+                        target: NormalizedRenderTarget::None {
+                            width: 100,
+                            height: 100,
+                        },
+                        position: Vec2::ZERO,
+                    },
+                ),
+                unit,
+                x: 0.0,
+                y: delta,
+                hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+                phase: TouchPhase::Moved,
+            });
+            assert_eq!(app.world().get::<ScrollPosition>(panel).unwrap().y, panel_y);
+            assert_eq!(app.world().get::<ScrollPosition>(root).unwrap().y, root_y);
+        }
+    }
+
+    #[test]
+    fn controls_preserve_scroll_until_the_screen_or_settings_tab_changes() {
+        let runtime = Runtime::new(
+            Content::builtin(),
+            "euglena",
+            "fresh-daughter",
+            "standard",
+            7,
+            false,
+        )
+        .unwrap();
+        let before = serde_json::to_value(&runtime).unwrap();
+        let mut app = App::new();
+        app.insert_resource(Session {
+            runtime,
+            network: None,
+            local: local::Queue::default(),
+            menu: true,
+            dirty: true,
+            specimen: 0,
+            scenario: 0,
+            difficulty: 1,
+            seed: 7,
+            page: 0,
+            message: String::new(),
+            map_message: String::new(),
+            save: PathBuf::new(),
+            clock: FixedStep::from_hz(30.0),
+            visual_phase: 0.0,
+            smoke_until: None,
+            name_edit: None,
+            inspect: false,
+        })
+        .init_resource::<settings::Settings>()
+        .init_resource::<Assets<Image>>()
+        .init_resource::<portrait::Cache>()
+        .init_resource::<city::Artwork>()
+        .init_resource::<ButtonInput<KeyCode>>()
+        .add_systems(Update, (render, scroll_screen).chain())
+        .add_observer(interact);
+        app.update();
+        for (action, expected_screen, expected_y) in [
+            (Click::Scenario(1), Screen::Selection, 240.0),
+            (Click::Difficulty(2), Screen::Selection, 240.0),
+            (
+                Click::Settings,
+                Screen::Settings(settings::Tab::Performance),
+                0.0,
+            ),
+            (
+                Click::SettingsTab(settings::Tab::Accessibility),
+                Screen::Settings(settings::Tab::Accessibility),
+                0.0,
+            ),
+            (
+                Click::Preference(settings::Preference::Contrast),
+                Screen::Settings(settings::Tab::Accessibility),
+                240.0,
+            ),
+            (
+                Click::SettingsTab(settings::Tab::Video),
+                Screen::Settings(settings::Tab::Video),
+                0.0,
+            ),
+            (Click::Settings, Screen::Selection, 0.0),
+        ] {
+            let old_root = app
+                .world_mut()
+                .query_filtered::<Entity, With<Screen>>()
+                .single(app.world())
+                .unwrap();
+            app.world_mut()
+                .get_mut::<ScrollPosition>(old_root)
+                .unwrap()
+                .y = 240.0;
+            let control = app.world_mut().spawn((action, Enabled(true))).id();
+            app.world_mut().trigger(Activate { entity: control });
+            app.update();
+            let (new_root, screen, scroll) = app
+                .world_mut()
+                .query::<(Entity, &Screen, &ScrollPosition)>()
+                .single(app.world())
+                .unwrap();
+            assert_ne!(new_root, old_root, "exercise an actual screen rebuild");
+            assert!(*screen == expected_screen);
+            assert_eq!(scroll.y, expected_y);
+        }
+        assert_eq!(
+            serde_json::to_value(&app.world().resource::<Session>().runtime).unwrap(),
+            before,
+            "presentation and next-game choices must not mutate the current game"
+        );
+        let root = app
+            .world_mut()
+            .query_filtered::<Entity, With<Screen>>()
+            .single(app.world())
+            .unwrap();
+        app.world_mut().entity_mut(root).insert(ComputedNode {
+            size: Vec2::splat(100.0),
+            content_size: Vec2::new(100.0, 1100.0),
+            inverse_scale_factor: 1.0,
+            ..default()
+        });
+        // Hidden editors must not consume page navigation; visible ones retain it.
+        for (open, menu, tab, rename, ai_name, expected) in [
+            (true, false, settings::Tab::Video, true, false, 80.0),
+            (false, false, settings::Tab::Players, false, true, 80.0),
+            (true, false, settings::Tab::Video, false, true, 80.0),
+            (false, true, settings::Tab::Video, true, false, 80.0),
+            (false, false, settings::Tab::Video, true, false, 0.0),
+            (true, false, settings::Tab::Players, false, true, 0.0),
+        ] {
+            {
+                let mut session = app.world_mut().resource_mut::<Session>();
+                session.menu = menu;
+                session.name_edit = rename.then(String::new);
+            }
+            {
+                let mut settings = app.world_mut().resource_mut::<settings::Settings>();
+                settings.open = open;
+                settings.tab = tab;
+                settings.edit_ai_name = ai_name.then(String::new);
+            }
+            app.world_mut().get_mut::<ScrollPosition>(root).unwrap().y = 0.0;
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .press(KeyCode::PageDown);
+            app.update();
+            assert_eq!(app.world().get::<ScrollPosition>(root).unwrap().y, expected);
+            app.world_mut()
+                .resource_mut::<ButtonInput<KeyCode>>()
+                .reset_all();
+        }
+        {
+            let mut settings = app.world_mut().resource_mut::<settings::Settings>();
+            settings.open = false;
+            settings.edit_ai_name = None;
+        }
+        {
+            let mut session = app.world_mut().resource_mut::<Session>();
+            session.menu = false;
+            session.name_edit = None;
+            session.dirty = true;
+        }
+        app.update();
+        for (action, expected) in [(Click::Inspect, 120.0), (Click::Inspect, 120.0)] {
+            let panel = app
+                .world_mut()
+                .query_filtered::<Entity, With<PanelScroll>>()
+                .single(app.world())
+                .unwrap();
+            app.world_mut().get_mut::<ScrollPosition>(panel).unwrap().y = 120.0;
+            let control = app.world_mut().spawn((action, Enabled(true))).id();
+            app.world_mut().trigger(Activate { entity: control });
+            app.update();
+            let (replacement, scroll) = app
+                .world_mut()
+                .query_filtered::<(Entity, &ScrollPosition), With<PanelScroll>>()
+                .single(app.world())
+                .unwrap();
+            assert_ne!(replacement, panel);
+            assert_eq!(
+                scroll.y, expected,
+                "action-panel rebuild preserves its offset"
+            );
+        }
+        for _ in 0..2 {
+            let control = app.world_mut().spawn((Click::Settings, Enabled(true))).id();
+            app.world_mut().trigger(Activate { entity: control });
+            app.update();
+        }
+        let scroll = app
+            .world_mut()
+            .query_filtered::<&ScrollPosition, With<PanelScroll>>()
+            .single(app.world())
+            .unwrap();
+        assert_eq!(scroll.y, 0.0, "changing screens resets the action panel");
+        assert_eq!(
+            serde_json::to_value(&app.world().resource::<Session>().runtime).unwrap(),
+            before,
+            "scroll and inspection changes preserve the authoritative game"
+        );
+    }
 
     #[test]
     fn stalled_local_work_keeps_animation_running_and_blocks_state_replacement() {

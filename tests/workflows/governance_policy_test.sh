@@ -292,7 +292,7 @@ assert.equal(critical.if, undefined);
 assert.equal(critical["continue-on-error"], undefined);
 console.log("PASS: merge queue keeps security analysis and gates without unsupported SARIF uploads");
 assert.equal(rust.jobs.acceptance.uses, "./.github/workflows/e2e.yml");
-assert.equal(rust.jobs.acceptance.needs, "windows-native");
+assert.equal(rust.jobs.acceptance.needs, undefined, "Linux acceptance must run independently of Windows");
 const gate = rust.jobs["rust-ci"];
 assert.deepEqual(gate.needs, ["windows-native", "acceptance"]);
 assert.equal(gate.if, "${{ always() }}");

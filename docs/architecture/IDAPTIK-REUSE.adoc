@@ -1,0 +1,103 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= IDApTIK reuse assessment and Cytoville delivery order
+
+Inspection date: 2026-11-24. Source: `catachresis-colloquium/IDApTIK` at
+`7b52293e3b9e4d29c79f103e9446601ac8bbc0bb`. This is a source/design assessment,
+not a fresh execution receipt for IDApTIK or an implementation claim for
+Cytoville. The owner requested preserving useful multiplayer work while
+prioritising a playable single-player MVP, then a local two-player alpha.
+
+== What transfers
+
+[cols="2,3,3",options="header"]
+|===
+|Source |Observed scope |Cytoville adoption
+|`docs/adr/0015-deployment-topologies-and-state-ownership.md`
+|Separates topology, operator, simulation authority and optional GSA. Explicitly
+calls hosted authority, durable journals and failover partially/unimplemented.
+|Retain one authoritative Cytoville session. Clients submit commands; the
+server validates revisions and owns outcomes. GSA stays optional. Never equate
+a relay, cache, directory or replica digest with consensus or authority.
+
+|`scripts/loopback_check.sh`
+|Tests two seat outputs against a deterministic headless reference, peer loss,
+live pacing, pause and reconnect/resync. This is client-lockstep relay coverage.
+|Adapt the reference-comparison and fault scenarios to Cytoville's authoritative
+server. Compare both accepted client states with the same runtime command
+history. Do not copy peer ownership or IDApTIK-specific verbs/roles.
+
+|`docs/MULTIPLAYER-TROUBLESHOOTING.md`, `scripts/multiplayer-runtime.sh`
+|Local-only launch, staged readiness, Windows helper policy checks, diagnostic
+renderer reporting and documented WSLg/software-rendering failure modes.
+|Prioritise actual renderer identity, release build, visible launch readiness,
+input response and orderly shutdown for the single-player MVP. Preserve local
+binding, listener ownership and private ticket handling for multiplayer.
+
+|`docs/adr/0002-multiplayer-transport.md`
+|Bandit/Phoenix Channels transport moved out of IDApTIK into Burble. The current
+IDApTIK repository is not a reusable standalone Elixir game server.
+|Keep Cytoville's working Elixir transport for the MVP. Evaluate a Burble game
+profile later with explicit authority/authentication tests; do not replace
+the current protocol just to align framework names.
+
+|`docs/abi/ABI-AUTHORITY.md`
+|Idris2 is the normative ABI; Zig implements the foreign interface. Generated
+connector manifests, pinned origins and conformance controls are distinguished
+from proof and execution evidence.
+|Retain this distinction for Cytoville ABI/FFI work. Record ownership, marshaling,
+calling-convention and refinement obligations explicitly; compile/consumer
+tests do not prove implementation correspondence. Creusot/Pearlite and Verus
+scopes for first-party Rust remain separately recorded.
+|===
+
+== Current gaps and concrete acceptance additions
+
+Cytoville already has two-human transport tests and a graphical local TLS
+journey with a native rival. Its graphical acceptance document explicitly
+leaves two simultaneous human GUI clients and complete scenario/end-game
+coverage open. Do not count these existing tests as a completed two-player
+graphical alpha.
+
+. Finish one complete single-player scenario from selection to win/loss,
+  including actions, encounters, rival turns and save/resume. Record target
+  desktop renderer and response measurements alongside functional results.
+. Run two graphical clients through a complete local TLS match. Both must
+  display the same authoritative revision and correct active seat after each
+  accepted turn. Match gameplay state against a headless replay, excluding
+  private credentials and presentation-only state.
+. Drop the connection after command submission but before acknowledgement.
+  Resume from authoritative state; do not blindly replay the command. Check
+  that the revision and effects occur once.
+. Exercise stale revision, wrong seat, wrong invitation/resume key, changed
+  content fingerprint and invalid TLS identity. Refusal must preserve state.
+. Stop a client and then the authority separately. Display bounded connection
+  failure/recovery; clients must not silently become authoritative. Recovery
+  must distinguish a restart of the same authority from a new session.
+
+These are adopted acceptance requirements, not claims that new tests have run.
+Inspect existing protocol cases before adding duplicates. Keep test-generated
+credentials, tickets and checkpoints out of published receipts/screenshots.
+
+== Explicit exclusions
+
+IDApTIK's test relay documentation warns that its test-only guest/role admission
+is not suitable for LAN or public use (IDApTIK #211 / Burble #254). Do not import
+that admission path into Cytoville or weaken its existing seat/TLS checks.
+No public hosting, federation, LMDB/Dragonfly migration, direct peer transport
+or automatic failover is introduced by this assessment. They require separate
+work and measured justification. SNIF's documented compute boundary is not a
+socket/database service and is not wired into Cytoville by writing this plan.
+
+The earlier chats “Branch · IDApTIK Multiplayer Overview” and “Branch · IDApTIK
+Source Code Analysis” describe useful ambitions and historical repositories.
+Their older stack summaries are not evidence of the current Rust/Burble path;
+the exact repository revision above is the engineering reference for this
+assessment. Retain the design history without promoting it to delivery status.
+
+== Source links
+
+* https://github.com/catachresis-colloquium/IDApTIK/blob/7b52293e3b9e4d29c79f103e9446601ac8bbc0bb/docs/adr/0015-deployment-topologies-and-state-ownership.md[Authority and deployment contract]
+* https://github.com/catachresis-colloquium/IDApTIK/blob/7b52293e3b9e4d29c79f103e9446601ac8bbc0bb/scripts/loopback_check.sh[Loopback acceptance]
+* https://github.com/catachresis-colloquium/IDApTIK/blob/7b52293e3b9e4d29c79f103e9446601ac8bbc0bb/docs/MULTIPLAYER-TROUBLESHOOTING.md[Launch/security limitations]
+* https://github.com/catachresis-colloquium/IDApTIK/blob/7b52293e3b9e4d29c79f103e9446601ac8bbc0bb/docs/adr/0002-multiplayer-transport.md[Transport decision]
+* https://github.com/catachresis-colloquium/IDApTIK/blob/7b52293e3b9e4d29c79f103e9446601ac8bbc0bb/docs/abi/ABI-AUTHORITY.md[ABI authority]

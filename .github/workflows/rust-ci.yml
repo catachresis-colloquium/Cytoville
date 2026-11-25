@@ -42,7 +42,6 @@ jobs:
         run: cargo test -p cytoville-runtime --release --test runtime --locked
 
   acceptance:
-    needs: windows-native
     uses: ./.github/workflows/e2e.yml
 
   rust-ci:
